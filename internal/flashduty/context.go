@@ -54,7 +54,7 @@ func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) 
 	}
 
 	if cfg.APPKey == "" {
-		return ctx, nil, fmt.Errorf("Flashduty APP key is not configured")
+		return ctx, nil, fmt.Errorf("flashduty app key is not configured")
 	}
 
 	// Use APP key as cache key, assuming one key corresponds to one client configuration.

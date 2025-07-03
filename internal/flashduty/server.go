@@ -200,7 +200,7 @@ func RunStdioServer(cfg StdioServerConfig) error {
 	return nil
 }
 
-type HttpServerConfig struct {
+type HTTPServerConfig struct {
 	// Version of the server
 	Version string
 	// Commit of the server
@@ -262,7 +262,7 @@ func httpContextFunc(ctx context.Context, r *http.Request, defaultBaseURL string
 	return ContextWithConfig(ctx, cfg)
 }
 
-func RunHttpServer(cfg HttpServerConfig) error {
+func RunHTTPServer(cfg HTTPServerConfig) error {
 	// Setup logging
 	logrusLogger := logrus.New()
 	if cfg.LogFilePath != "" {

@@ -73,7 +73,7 @@ var (
 		Short: "Start HTTP server",
 		Long:  `Start a streamable HTTP server.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			httpServerConfig := flashduty.HttpServerConfig{
+			httpServerConfig := flashduty.HTTPServerConfig{
 				Version:     version,
 				Commit:      commit,
 				Date:        date,
@@ -81,7 +81,7 @@ var (
 				Port:        viper.GetString("port"),
 				LogFilePath: viper.GetString("log-file"),
 			}
-			return flashduty.RunHttpServer(httpServerConfig)
+			return flashduty.RunHTTPServer(httpServerConfig)
 		},
 	}
 )
