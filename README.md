@@ -90,7 +90,7 @@ Add the following JSON block to your Cursor MCP configuration.
 
 Besides building from source, you can also download a pre-compiled version for your operating system directly from the project's [GitHub Releases](https://github.com/flashcatcloud/flashduty-mcp-server/releases), which is a faster and more convenient option.
 
-If you prefer to build from source, you can use `go build` to build the binary in the `cmd/stdio` directory. You can provide the APP key either via environment variable or command-line argument.
+If you prefer to build from source, you can use `go build` to build the binary in the `cmd/flashduty-mcp-server` directory. You can provide the APP key either via environment variable or command-line argument.
 
 You should configure your MCP host to use the built executable as its `command`. For example:
 

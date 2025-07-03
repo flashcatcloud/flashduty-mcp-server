@@ -89,7 +89,7 @@ Flashduty MCP 服务是一个 [模型上下文协议 (MCP)](https://modelcontext
 
 除了通过源码构建，您也可以直接从本项目的 [GitHub Releases](https://github.com/flashcatcloud/flashduty-mcp-server/releases) 页面下载适用于您操作系统的预编译版本，这是一个更快捷方便的选项。
 
-如果您没有 Docker，您可以使用 `go build` 在 `cmd/stdio` 目录中构建二进制文件。您可以通过环境变量或命令行参数提供 APP 密钥。
+如果您没有 Docker，您可以使用 `go build` 在 `cmd/flashtudy-mcp-server` 目录中构建二进制文件。您可以通过环境变量或命令行参数提供 APP 密钥。
 
 您应该配置 Cursor 使用构建的可执行文件作为其 `command`。例如：
 
