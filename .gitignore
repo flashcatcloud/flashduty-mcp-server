@@ -1,5 +1,4 @@
 .idea
-cmd/stdio/flashduty-mcp-server
 
 # VSCode
 .vscode/*
