@@ -1,5 +1,6 @@
 FROM golang:1.24.4-alpine AS build
 ARG VERSION="dev"
+ARG TARGETARCH
 
 # Set the working directory
 WORKDIR /build
@@ -13,7 +14,7 @@ RUN --mount=type=cache,target=/var/cache/apk \
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=bind,target=. \
-    CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION} -X main.commit=$(git rev-parse HEAD) -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    CGO_ENABLED=0 GOARCH=${TARGETARCH} go build -ldflags="-s -w -X main.version=${VERSION} -X main.commit=$(git rev-parse HEAD) -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     -o /bin/flashduty-mcp-server cmd/flashduty-mcp-server/main.go
 
 # Make a stage to run the app
