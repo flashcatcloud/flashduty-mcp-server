@@ -310,8 +310,10 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 		Addr:              ":" + cfg.Port,
 		Handler:           mux,
 		ReadHeaderTimeout: 30 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      0, // No timeout for streaming
+		ReadTimeout:       0,                // No timeout for streaming
+		WriteTimeout:      0,                // No timeout for streaming
+		IdleTimeout:       60 * time.Second, // Prevent dangling connections
+		MaxHeaderBytes:    128 * 1024,       // 128KB
 	}
 
 	go func() {
