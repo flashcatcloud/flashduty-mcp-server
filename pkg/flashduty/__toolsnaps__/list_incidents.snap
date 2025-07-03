@@ -1,0 +1,22 @@
+SNAP_DESCRIPTION: List incidents tool
+SNAP_TOOL_NAME: flashduty_list_incidents
+
+REQUEST:
+{
+  "method": "tools/call",
+  "params": {
+    "name": "flashduty_list_incidents",
+    "arguments": {}
+  }
+}
+
+RESPONSE:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"items\":[{\"incident_id\":1,\"incident_title\":\"Database Connection Issue\",\"status\":\"triggered\"},{\"incident_id\":2,\"incident_title\":\"API Response Time High\",\"status\":\"acknowledged\"}]}"
+    }
+  ],
+  "isError": false
+} 

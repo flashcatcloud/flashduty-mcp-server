@@ -1,0 +1,36 @@
+{
+  "name": "flashduty_get_member_list",
+  "description": "Get the list of members in Flashduty account",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "p": {
+        "type": "number",
+        "description": "Page number, starting from 1 (default: 1)",
+        "minimum": 1
+      },
+      "limit": {
+        "type": "number",
+        "description": "Number of items per page (default: 20)",
+        "minimum": 1
+      },
+      "query": {
+        "type": "string",
+        "description": "Search keyword for member name"
+      },
+      "role_id": {
+        "type": "number",
+        "description": "Filter by role ID"
+      },
+      "orderby": {
+        "type": "string",
+        "description": "Sort field (created_at, updated_at)",
+        "enum": ["created_at", "updated_at"]
+      },
+      "asc": {
+        "type": "boolean",
+        "description": "Whether to sort ascending (default: false)"
+      }
+    }
+  }
+} 

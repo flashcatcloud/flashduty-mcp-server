@@ -1,0 +1,26 @@
+SNAP_DESCRIPTION: Create channel tool
+SNAP_TOOL_NAME: flashduty_create_channel
+
+REQUEST:
+{
+  "method": "tools/call",
+  "params": {
+    "name": "flashduty_create_channel",
+    "arguments": {
+      "name": "New Channel",
+      "type": "webhook",
+      "webhook_url": "https://example.com/webhook"
+    }
+  }
+}
+
+RESPONSE:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"channel_id\":\"ch3\",\"name\":\"New Channel\",\"type\":\"webhook\"}"
+    }
+  ],
+  "isError": false
+} 

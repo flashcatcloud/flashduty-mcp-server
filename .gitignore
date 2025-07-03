@@ -1,0 +1,20 @@
+.idea
+cmd/stdio/flashduty-mcp-server
+
+# VSCode
+.vscode/*
+!.vscode/launch.json
+
+# Added by goreleaser init:
+dist/
+__debug_bin*
+
+# Go
+vendor
+
+# OpenAPI
+flashduty.openapi.json
+flashduty-api.md
+http.log
+http.pid
+/flashduty-mcp-server

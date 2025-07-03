@@ -1,0 +1,22 @@
+SNAP_DESCRIPTION: List channels tool
+SNAP_TOOL_NAME: flashduty_list_channels
+
+REQUEST:
+{
+  "method": "tools/call",
+  "params": {
+    "name": "flashduty_list_channels",
+    "arguments": {}
+  }
+}
+
+RESPONSE:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"items\":[{\"channel_id\":\"ch1\",\"name\":\"Slack Channel\",\"type\":\"slack\"},{\"channel_id\":\"ch2\",\"name\":\"Teams Channel\",\"type\":\"teams\"}]}"
+    }
+  ],
+  "isError": false
+} 

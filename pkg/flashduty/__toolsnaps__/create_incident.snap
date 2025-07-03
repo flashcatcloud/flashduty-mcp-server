@@ -1,0 +1,26 @@
+SNAP_DESCRIPTION: Create incident tool
+SNAP_TOOL_NAME: flashduty_create_incident
+
+REQUEST:
+{
+  "method": "tools/call",
+  "params": {
+    "name": "flashduty_create_incident",
+    "arguments": {
+      "incident_title": "New Critical Issue",
+      "team_id": 1,
+      "severity_id": 1
+    }
+  }
+}
+
+RESPONSE:
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"incident_id\":3,\"incident_title\":\"New Critical Issue\",\"status\":\"triggered\"}"
+    }
+  ],
+  "isError": false
+} 
