@@ -5,7 +5,7 @@ go 1.24.4
 require (
 	github.com/google/go-github/v72 v72.0.0
 	github.com/josephburnett/jd v1.9.2
-	github.com/mark3labs/mcp-go v0.32.0
+	github.com/mark3labs/mcp-go v0.34.0
 	github.com/migueleliasweb/go-github-mock v1.4.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
