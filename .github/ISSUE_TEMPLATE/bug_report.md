@@ -13,7 +13,7 @@ A clear and concise description of what the bug is.
 
 ### Affected version
 
-Please run ` docker run -i --rm flashcat.tencentcloudcr.com/flashduty/flashduty-mcp-server ./flashduty-mcp-server --version` and paste the output below
+Please run ` docker run -i --rm registry.flashcat.cloud/public/flashduty-mcp-server ./flashduty-mcp-server --version` and paste the output below
 
 ### Steps to reproduce the behavior
 

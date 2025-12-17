@@ -17,9 +17,9 @@ on:
 
 env:
   # Use docker.io for Docker Hub if empty
-  REGISTRY: flashcat.tencentcloudcr.com
+  REGISTRY: registry.flashcat.cloud
   # github.repository as <account>/<repo>
-  IMAGE_NAME: flashduty/flashduty-mcp-server
+  IMAGE_NAME: public/flashduty-mcp-server
 
 jobs:
   build:

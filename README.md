@@ -76,7 +76,7 @@ Add the following JSON block to your Cursor MCP configuration.
         "--rm",
         "-e",
         "FLASHDUTY_APP_KEY",
-        "flashcat.tencentcloudcr.com/flashduty/flashduty-mcp-server"
+        "registry.flashcat.cloud/public/flashduty-mcp-server"
       ],
       "env": {
         "FLASHDUTY_APP_KEY": "your_flashduty_app_key"
@@ -179,7 +179,7 @@ docker run -i --rm \
   -e FLASHDUTY_APP_KEY=<your-app-key> \
   -e FLASHDUTY_TOOLSETS="flashduty_incidents,flashduty_teams" \
   -e FLASHDUTY_READ_ONLY=1 \
-  flashcat.tencentcloudcr.com/flashduty/flashduty-mcp-server
+  registry.flashcat.cloud/public/flashduty-mcp-server
 ```
 
 #### 2. Via Command-Line Arguments

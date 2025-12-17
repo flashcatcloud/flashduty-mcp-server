@@ -17,3 +17,7 @@ flashduty-api.md
 http.log
 http.pid
 /flashduty-mcp-server
+
+.cursor
+AGENTS.md
+openspec

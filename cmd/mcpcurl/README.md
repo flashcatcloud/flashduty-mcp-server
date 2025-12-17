@@ -34,7 +34,7 @@ The `--stdio-server-cmd` flag is required for all commands and specifies the com
 List available tools in FlashDuty's MCP server:
 
 ```console
-% ./mcpcurl --stdio-server-cmd "docker run -i --rm -e FLASHDUTY_APP_KEY=<your_app_key> flashcat.tencentcloudcr.com/flashduty/flashduty-mcp-server" tools --help
+% ./mcpcurl --stdio-server-cmd "docker run -i --rm -e FLASHDUTY_APP_KEY=<your_app_key> registry.flashcat.cloud/public/flashduty-mcp-server" tools --help
 Contains all dynamically generated tool commands from the schema
 
 Usage:
@@ -78,7 +78,7 @@ Use "mcpcurl tools [command] --help" for more information about a command.
 Get help for a specific tool:
 
 ```console
- % ./mcpcurl --stdio-server-cmd "docker run -i --rm -e FLASHDUTY_APP_KEY=<your_app_key> flashcat.tencentcloudcr.com/flashduty/flashduty-mcp-server" tools flashduty_incidents_infos --help
+ % ./mcpcurl --stdio-server-cmd "docker run -i --rm -e FLASHDUTY_APP_KEY=<your_app_key> registry.flashcat.cloud/public/flashduty-mcp-server" tools flashduty_incidents_infos --help
 Get incident information by incident IDs
 
 Usage:
@@ -96,7 +96,7 @@ Global Flags:
 Use one of the tools:
 
 ```console
- % ./mcpcurl --stdio-server-cmd "docker run -i --rm -e FLASHDUTY_APP_KEY=<your_app_key> flashcat.tencentcloudcr.com/flashduty/flashduty-mcp-server" tools flashduty_list_incidents --start_time=1701388800 --end_time=1704067199 --limit=2
+ % ./mcpcurl --stdio-server-cmd "docker run -i --rm -e FLASHDUTY_APP_KEY=<your_app_key> registry.flashcat.cloud/public/flashduty-mcp-server" tools flashduty_list_incidents --start_time=1701388800 --end_time=1704067199 --limit=2
 {
   "has_next_page": true,
   "items": [
