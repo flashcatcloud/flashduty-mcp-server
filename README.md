@@ -145,14 +145,14 @@ Here is an example of configuring the remote service, specifying toolsets and re
 {
   "mcpServers": {
     "flashduty": {
-      "url": "https://mcp.flashcat.cloud/flashduty?toolsets=flashduty_incidents,flashduty_teams&read_only=true",
+      "url": "https://mcp.flashcat.cloud/flashduty?toolsets=incidents,users&read_only=true",
       "authorization_token": "Bearer <your_flashduty_app_key>"
     }
   }
 }
 ```
 
-- `toolsets=...`: Use a comma-separated list to specify the toolsets to enable.
+- `toolsets=...`: Use a comma-separated list to specify the toolsets to enable (e.g., `incidents,users,channels`).
 - `read_only=true`: Enables read-only mode.
 
 ### Local Server Configuration
@@ -168,6 +168,7 @@ This is the most common method for local configuration, especially in a Docker e
 | `FLASHDUTY_APP_KEY` | Flashduty APP key | ✅ | - |
 | `FLASHDUTY_TOOLSETS` | Toolsets to enable (comma-separated) | ❌ | All toolsets |
 | `FLASHDUTY_READ_ONLY` | Restrict to read-only operations (`1` or `true`) | ❌ | `false` |
+| `FLASHDUTY_OUTPUT_FORMAT` | Output format for tool results (`json` or `toon`) | ❌ | `json` |
 | `FLASHDUTY_BASE_URL` | Flashduty API base URL | ❌ | `https://api.flashcat.cloud` |
 | `FLASHDUTY_LOG_FILE` | Log file path | ❌ | stderr |
 | `FLASHDUTY_ENABLE_COMMAND_LOGGING` | Enable command logging | ❌ | `false` |
@@ -177,7 +178,7 @@ This is the most common method for local configuration, especially in a Docker e
 ```bash
 docker run -i --rm \
   -e FLASHDUTY_APP_KEY=<your-app-key> \
-  -e FLASHDUTY_TOOLSETS="flashduty_incidents,flashduty_teams" \
+  -e FLASHDUTY_TOOLSETS="incidents,users,channels" \
   -e FLASHDUTY_READ_ONLY=1 \
   registry.flashcat.cloud/public/flashduty-mcp-server
 ```
@@ -189,7 +190,7 @@ If you build and run the binary directly from the source, you can use command-li
 ```bash
 ./flashduty-mcp-server stdio \
   --app-key your_app_key_here \
-  --toolsets flashduty_incidents,flashduty_teams \
+  --toolsets incidents,users,channels \
   --read-only
 ```
 
@@ -197,6 +198,7 @@ Available command-line arguments:
 - `--app-key`: Flashduty APP key (alternative to `FLASHDUTY_APP_KEY` environment variable)
 - `--toolsets`: Comma-separated list of toolsets to enable
 - `--read-only`: Enable read-only mode
+- `--output-format`: Output format for tool results (`json` or `toon`)
 - `--base-url`: Flashduty API base URL
 - `--log-file`: Path to log file
 - `--enable-command-logging`: Enable command logging
@@ -204,7 +206,38 @@ Available command-line arguments:
 
 > Note: Command-line arguments take precedence over environment variables. For toolsets configuration, if both `FLASHDUTY_TOOLSETS` environment variable and `--toolsets` argument are set, the command-line argument takes priority.
 
-#### 3. i18n / Overriding Descriptions (Local-Only)
+#### 3. Output Format (TOON)
+
+The server supports [TOON (Token-Oriented Object Notation)](https://github.com/toon-format/toon) format for tool results, which can significantly reduce token usage (30-50%) when working with LLMs.
+
+**JSON output** (default):
+```json
+{"members":[{"person_id":1,"person_name":"Alice"},{"person_id":2,"person_name":"Bob"}],"total":2}
+```
+
+**TOON output** (compact):
+```
+members[2]{person_id,person_name}:
+  1,Alice
+  2,Bob
+total: 2
+```
+
+To enable TOON format:
+
+**Via Environment Variable:**
+```bash
+export FLASHDUTY_OUTPUT_FORMAT=toon
+```
+
+**Via Command-line:**
+```bash
+./flashduty-mcp-server stdio --output-format toon
+```
+
+> **Note:** TOON format is particularly effective for arrays of objects with uniform fields (e.g., member lists, incident lists). Most modern LLMs can parse TOON format naturally.
+
+#### 4. i18n / Overriding Descriptions (Local-Only)
 
 The feature to override tool descriptions is only available for local deployments. You can achieve this by creating a `flashduty-mcp-server-config.json` file or by setting environment variables.
 
@@ -230,49 +263,48 @@ export FLASHDUTY_MCP_TOOL_CREATE_INCIDENT_DESCRIPTION="an alternative descriptio
 
 The following toolsets are available (all are on by default). You can also use `all` to enable all toolsets.
 
-| Toolset                 | Description                                                   |
-| ----------------------- | ------------------------------------------------------------- |
-| `flashduty_incidents`   | Flashduty incident management tools                           |
-| `flashduty_members`     | Flashduty member management tools                             |
-| `flashduty_teams`       | Flashduty team management tools                               |
-| `flashduty_channels`    | Flashduty collaboration channel management tools              |
+| Toolset        | Description                                      | Tools |
+| -------------- | ------------------------------------------------ | ----- |
+| `incidents`    | Incident lifecycle management                    | 6     |
+| `changes`      | Change record query                              | 1     |
+| `status_page`  | Status page management                           | 4     |
+| `users`        | Member and team query                            | 2     |
+| `channels`     | Collaboration space and escalation rules         | 2     |
+| `fields`       | Custom field definitions                         | 1     |
+
+**Total: 16 tools**
 
 ---
 
 ## Tools
 
-The server provides the following toolsets based on Flashduty API:
+### `incidents` - Incident Lifecycle Management (6 tools)
+- `query_incidents` - Query incidents with enriched data (timeline, alerts, responders)
+- `create_incident` - Create a new incident
+- `update_incident` - Update incident (title, description, severity, custom_fields)
+- `ack_incident` - Acknowledge incidents
+- `close_incident` - Close (resolve) incidents
+- `list_similar_incidents` - Find similar historical incidents
 
-### `flashduty_members` - Member Management Tools
-- `flashduty_member_infos` - Get member information by person IDs
+### `changes` - Change Record Query (1 tool)
+- `query_changes` - Query change records with filters
 
-### `flashduty_teams` - Team Management Tools  
-- `flashduty_teams_infos` - Get team information by team IDs
+### `status_page` - Status Page Management (4 tools)
+- `query_status_pages` - Query status pages with full configuration
+- `list_status_changes` - List change events on status page
+- `create_status_incident` - Create incident on status page
+- `create_change_timeline` - Add timeline update to status change
 
-### `flashduty_channels` - Channel Management Tools
-- `flashduty_channels_infos` - Get collaboration space information by channel IDs
+### `users` - Member and Team Query (2 tools)
+- `query_members` - Query members with optional filters
+- `query_teams` - Query teams with member details
 
-### `flashduty_incidents` - Incident Management Tools
-- `flashduty_incidents_infos` - Get incident information by incident IDs
-- `flashduty_list_incidents` - List incidents with comprehensive filters
-- `flashduty_list_past_incidents` - List similar historical incidents
-- `flashduty_get_incident_timeline` - Get incident timeline and feed
-- `flashduty_get_incident_alerts` - Get alerts associated with incidents
-- `flashduty_create_incident` - Create a new incident
-- `flashduty_ack_incident` - Acknowledge incidents
-- `flashduty_resolve_incident` - Resolve incidents
-- `flashduty_assign_incident` - Assign incidents to people or escalation rules
-- `flashduty_add_responder` - Add responders to incidents
-- `flashduty_snooze_incident` - Snooze incidents for a period
-- `flashduty_merge_incident` - Merge multiple incidents into one
-- `flashduty_comment_incident` - Add comments to incidents
-- `flashduty_update_incident_title` - Update incident title
-- `flashduty_update_incident_description` - Update incident description
-- `flashduty_update_incident_impact` - Update incident impact
-- `flashduty_update_incident_root_cause` - Update incident root cause
-- `flashduty_update_incident_resolution` - Update incident resolution
-- `flashduty_update_incident_severity` - Update incident severity
-- `flashduty_update_incident_fields` - Update custom fields
+### `channels` - Collaboration Space and Escalation Rules (2 tools)
+- `query_channels` - Query collaboration spaces
+- `query_escalation_rules` - Query escalation rules for a channel
+
+### `fields` - Custom Field Definitions (1 tool)
+- `query_fields` - Query custom field definitions
 
 ---
 

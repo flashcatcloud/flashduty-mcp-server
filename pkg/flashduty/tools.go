@@ -6,60 +6,69 @@ import (
 )
 
 // DefaultTools is the default list of enabled Flashduty toolsets
-var DefaultTools = []string{"flashduty_members", "flashduty_teams", "flashduty_channels", "flashduty_incidents"}
+var DefaultTools = []string{"incidents", "changes", "status_page", "users", "channels", "fields"}
 
 // DefaultToolsetGroup returns the default toolset group for Flashduty
 func DefaultToolsetGroup(getClient GetFlashdutyClientFn, readOnly bool, t translations.TranslationHelperFunc) *toolsets.ToolsetGroup {
 	group := toolsets.NewToolsetGroup(readOnly)
 
-	// Members toolset
-	members := toolsets.NewToolset("flashduty_members", "Flashduty member management tools").
+	// Incidents toolset (8 tools)
+	incidents := toolsets.NewToolset("incidents", "Incident lifecycle management tools").
 		AddReadTools(
-			toolsets.NewServerTool(MemberInfos(getClient, t)),
-		)
-	group.AddToolset(members)
-
-	// Teams toolset
-	teams := toolsets.NewToolset("flashduty_teams", "Flashduty team management tools").
-		AddReadTools(
-			toolsets.NewServerTool(TeamInfos(getClient, t)),
-		)
-	group.AddToolset(teams)
-
-	// Channels toolset
-	channels := toolsets.NewToolset("flashduty_channels", "Flashduty collaboration channel management tools").
-		AddReadTools(
-			toolsets.NewServerTool(ChannelInfos(getClient, t)),
-		)
-	group.AddToolset(channels)
-
-	// Incidents toolset
-	incidents := toolsets.NewToolset("flashduty_incidents", "Flashduty incident management tools").
-		AddReadTools(
-			toolsets.NewServerTool(IncidentInfos(getClient, t)),
-			toolsets.NewServerTool(ListIncidents(getClient, t)),
-			toolsets.NewServerTool(ListPastIncidents(getClient, t)),
-			toolsets.NewServerTool(GetIncidentTimeline(getClient, t)),
-			toolsets.NewServerTool(GetIncidentAlerts(getClient, t)),
+			toolsets.NewServerTool(QueryIncidents(getClient, t)),
+			toolsets.NewServerTool(QueryIncidentTimeline(getClient, t)),
+			toolsets.NewServerTool(QueryIncidentAlerts(getClient, t)),
+			toolsets.NewServerTool(ListSimilarIncidents(getClient, t)),
 		).
 		AddWriteTools(
 			toolsets.NewServerTool(CreateIncident(getClient, t)),
+			toolsets.NewServerTool(UpdateIncident(getClient, t)),
 			toolsets.NewServerTool(AckIncident(getClient, t)),
-			toolsets.NewServerTool(ResolveIncident(getClient, t)),
-			toolsets.NewServerTool(AssignIncident(getClient, t)),
-			toolsets.NewServerTool(AddResponder(getClient, t)),
-			toolsets.NewServerTool(SnoozeIncident(getClient, t)),
-			toolsets.NewServerTool(MergeIncident(getClient, t)),
-			toolsets.NewServerTool(CommentIncident(getClient, t)),
-			toolsets.NewServerTool(UpdateIncidentTitle(getClient, t)),
-			toolsets.NewServerTool(UpdateIncidentDescription(getClient, t)),
-			toolsets.NewServerTool(UpdateIncidentImpact(getClient, t)),
-			toolsets.NewServerTool(UpdateIncidentRootCause(getClient, t)),
-			toolsets.NewServerTool(UpdateIncidentResolution(getClient, t)),
-			toolsets.NewServerTool(UpdateIncidentSeverity(getClient, t)),
-			toolsets.NewServerTool(UpdateIncidentFields(getClient, t)),
+			toolsets.NewServerTool(CloseIncident(getClient, t)),
 		)
 	group.AddToolset(incidents)
+
+	// Changes toolset (1 tool)
+	changes := toolsets.NewToolset("changes", "Change record query tools").
+		AddReadTools(
+			toolsets.NewServerTool(QueryChanges(getClient, t)),
+		)
+	group.AddToolset(changes)
+
+	// Status Page toolset (4 tools)
+	statusPage := toolsets.NewToolset("status_page", "Status page management tools").
+		AddReadTools(
+			toolsets.NewServerTool(QueryStatusPages(getClient, t)),
+			toolsets.NewServerTool(ListStatusChanges(getClient, t)),
+		).
+		AddWriteTools(
+			toolsets.NewServerTool(CreateStatusIncident(getClient, t)),
+			toolsets.NewServerTool(CreateChangeTimeline(getClient, t)),
+		)
+	group.AddToolset(statusPage)
+
+	// Users toolset (2 tools)
+	users := toolsets.NewToolset("users", "Member and team query tools").
+		AddReadTools(
+			toolsets.NewServerTool(QueryMembers(getClient, t)),
+			toolsets.NewServerTool(QueryTeams(getClient, t)),
+		)
+	group.AddToolset(users)
+
+	// Channels toolset (2 tools)
+	channelsToolset := toolsets.NewToolset("channels", "Collaboration space and escalation rule tools").
+		AddReadTools(
+			toolsets.NewServerTool(QueryChannels(getClient, t)),
+			toolsets.NewServerTool(QueryEscalationRules(getClient, t)),
+		)
+	group.AddToolset(channelsToolset)
+
+	// Fields toolset (1 tool)
+	fields := toolsets.NewToolset("fields", "Custom field definition query tools").
+		AddReadTools(
+			toolsets.NewServerTool(QueryFields(getClient, t)),
+		)
+	group.AddToolset(fields)
 
 	return group
 }

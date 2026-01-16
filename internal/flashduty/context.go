@@ -3,7 +3,9 @@ package flashduty
 import (
 	"context"
 	"fmt"
-	"sync"
+	"time"
+
+	"github.com/bluele/gcache"
 
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 )
@@ -37,7 +39,9 @@ func contextWithClient(ctx context.Context, client *flashduty.Client) context.Co
 	return context.WithValue(ctx, flashdutyClientKey, client)
 }
 
-var clientCache = &sync.Map{} // map[string]*flashduty.Client
+var clientCache = gcache.New(1000).
+	Expiration(time.Hour).
+	Build()
 
 // getClientFromContext is a helper function for tool handlers to get a flashduty client.
 // It will try to get the client from the context first. If not found, it will create a new one
@@ -57,8 +61,9 @@ func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) 
 		return ctx, nil, fmt.Errorf("flashduty app key is not configured")
 	}
 
-	// Use APP key as cache key, assuming one key corresponds to one client configuration.
-	if client, ok := clientCache.Load(cfg.APPKey); ok {
+	// Use APP key and BaseURL as cache key to handle different environments.
+	cacheKey := fmt.Sprintf("%s|%s", cfg.APPKey, cfg.BaseURL)
+	if client, err := clientCache.Get(cacheKey); err == nil {
 		return contextWithClient(ctx, client.(*flashduty.Client)), client.(*flashduty.Client), nil
 	}
 
@@ -69,7 +74,7 @@ func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) 
 		return ctx, nil, fmt.Errorf("failed to create Flashduty client: %w", err)
 	}
 
-	clientCache.Store(cfg.APPKey, client)
+	_ = clientCache.Set(cacheKey, client)
 	ctx = contextWithClient(ctx, client)
 
 	return ctx, client, nil

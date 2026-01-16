@@ -1,29 +1,29 @@
-# Flashduty MCP 服务
+# Flashduty MCP Server
 
-中文 | [English](README.md)
+[English](README.md) | 中文
 
-Flashduty MCP 服务是一个 [模型上下文协议 (MCP)](https://modelcontextprotocol.io/introduction) 服务，它提供了与 Flashduty API 的无缝集成，为开发人员和工具提供了高级的故障管理和自动化功能。
+Flashduty MCP Server 是一个基于 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) 的服务，提供与 Flashduty API 的无缝对接，帮助开发者和工具实现智能化的故障管理与自动化运维。
 
-### 使用场景
+### 应用场景
 
-- 自动化 Flashduty 工作流和流程。
-- 从 Flashduty 提取和分析数据。
-- 构建与 Flashduty 交互的 AI 驱动的工具和应用程序。
+- 自动化 Flashduty 工作流程
+- 从 Flashduty 抽取和分析数据
+- 构建与 Flashduty 交互的 AI 工具和应用
 
 ---
 
-## 远程 Flashduty MCP 服务
+## 远程服务
 
-[![在 Cursor 中安装](https://img.shields.io/badge/Cursor-Install_Server-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](#remote-cursor)
+[![在 Cursor 中安装](https://img.shields.io/badge/Cursor-安装服务-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](#remote-cursor)
 
-远程 Flashduty MCP 服务提供了与 Flashduty 集成的最简单方法。如果您的 MCP 主机不支持远程 MCP 服务，您可以改用[本地版本的 Flashduty MCP 服务](#local-flashduty-mcp-server)。
+远程服务是接入 Flashduty 最便捷的方式。如果你的 MCP 客户端不支持远程服务，可以使用[本地服务](#本地服务)。
 
-## 先决条件
+### 前置条件
 
-1. 支持最新 MCP 规范和远程服务的 MCP 主机，例如 [Cursor](https://www.cursor.com/)。
-2. 来自您 Flashduty 账户的 Flashduty APP 密钥。
+1. 支持 MCP 协议的客户端，如 [Cursor](https://www.cursor.com/)
+2. Flashduty 账户的 APP Key
 
-## 安装
+### 配置示例
 
 <span id="remote-cursor"></span>
 
@@ -33,36 +33,33 @@ Flashduty MCP 服务是一个 [模型上下文协议 (MCP)](https://modelcontext
 {
   "mcpServers": {
     "flashduty": {
-      "url": "https://mcp.flashcat.cloud/flashduty?toolsets=flashduty_incidents,flashduty_teams&read_only=true",
+      "url": "https://mcp.flashcat.cloud/flashduty",
       "authorization_token": "Bearer <your_flashduty_app_key>"
     }
   }
 }
 ```
 
-> **注意：** 有关远程 MCP 服务设置的正确语法和位置，请参阅 Cursor 的文档。
+> **提示：** 具体配置位置请参考你所使用的 MCP 客户端文档。
 
 ---
 
-## 本地 Flashduty MCP 服务
+## 本地服务
 
-[![在 Cursor 中使用 Docker 安装](https://img.shields.io/badge/Cursor-Install_Server-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](#local-cursor)
+[![在 Cursor 中安装](https://img.shields.io/badge/Cursor-安装服务-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](#local-cursor)
 
-## 先决条件
+### 前置条件
 
-1. 要在容器中运行该服务，您需要安装 [Docker](https://www.docker.com/)。
-2. 安装 Docker 后，您还需要确保 Docker 正在运行。
-3. 最后，您需要从您的 Flashduty 帐户获取一个 Flashduty APP 密钥。
+1. 如需容器化运行，请先安装并启动 [Docker](https://www.docker.com/)
+2. Flashduty 账户的 APP Key
 
-## 安装
+### 配置示例
 
 <span id="local-cursor"></span>
 
 以 Cursor 为例：
 
-### 使用 Docker
-
-将以下 JSON 块添加到您的 Cursor MCP 配置中。
+#### Docker 方式
 
 ```json
 {
@@ -85,15 +82,11 @@ Flashduty MCP 服务是一个 [模型上下文协议 (MCP)](https://modelcontext
 }
 ```
 
-### 使用二进制
+#### 二进制方式
 
-除了通过源码构建，您也可以直接从本项目的 [GitHub Releases](https://github.com/flashcatcloud/flashduty-mcp-server/releases) 页面下载适用于您操作系统的预编译版本，这是一个更快捷方便的选项。
+你可以从 [GitHub Releases](https://github.com/flashcatcloud/flashduty-mcp-server/releases) 下载预编译的二进制文件，也可以通过 `go build` 在 `cmd/flashduty-mcp-server` 目录下自行构建。
 
-如果您没有 Docker，您可以使用 `go build` 在 `cmd/flashtudy-mcp-server` 目录中构建二进制文件。您可以通过环境变量或命令行参数提供 APP 密钥。
-
-您应该配置 Cursor 使用构建的可执行文件作为其 `command`。例如：
-
-**通过环境变量:**
+**环境变量方式：**
 ```json
 {
   "mcpServers": {
@@ -108,7 +101,7 @@ Flashduty MCP 服务是一个 [模型上下文协议 (MCP)](https://modelcontext
 }
 ```
 
-**通过命令行参数:**
+**命令行参数方式：**
 ```json
 {
   "mcpServers": {
@@ -120,167 +113,184 @@ Flashduty MCP 服务是一个 [模型上下文协议 (MCP)](https://modelcontext
 }
 ```
 
-> **注意：** 有关 MCP 服务设置的正确语法和位置，请参阅 Cursor 的文档。
-
 ---
 
-## 工具配置
+## 配置选项
 
-Flashduty MCP 服务支持多种配置选项，以满足不同的使用场景。主要配置项包括：
+Flashduty MCP Server 支持以下配置：
 
-- **工具集 (Toolsets)**: 允许您启用或禁用特定的功能组。仅启用需要的工具集可以帮助 LLM 更准确地选择工具，并减小上下文大小。
-- **只读模式 (Read-Only)**: 将服务限制在只读模式，禁止任何修改性操作，增强安全性。
-- **国际化 (i18n)**: 支持自定义工具的描述，以适应不同的语言或团队偏好。
+- **工具集 (Toolsets)**：按功能分组启用/禁用工具，减少上下文大小，帮助 LLM 更精准地选择工具
+- **只读模式 (Read-Only)**：禁止写操作，适用于安全要求较高的场景
+- **输出格式 (Output Format)**：支持 JSON 和 TOON 格式，TOON 格式可减少 30-50% 的 token 消耗
+- **国际化 (i18n)**：支持自定义工具描述
 
-配置方式主要分为 **远程服务配置** 和 **本地服务配置** 两种。
+### 远程服务配置
 
-### 远程工具配置
-
-当您使用公共远程服务 (`https://mcp.flashcat.cloud/flashduty`) 时，可以通过在 URL 中附加查询参数来动态配置服务。
-
-#### 配置示例
-
-以下是在 Cursor 中配置远程服务并指定工具集和只读模式的示例：
+通过 URL 参数动态配置：
 
 ```json
 {
   "mcpServers": {
     "flashduty": {
-      "url": "https://mcp.flashcat.cloud/flashduty?toolsets=flashduty_incidents,flashduty_teams&read_only=true",
+      "url": "https://mcp.flashcat.cloud/flashduty?toolsets=incidents,users&read_only=true",
       "authorization_token": "Bearer <your_flashduty_app_key>"
     }
   }
 }
 ```
 
-- `toolsets=...`: 使用逗号分隔的列表来指定要启用的工具集。
-- `read_only=true`: 启用只读模式。
+- `toolsets=...`：启用指定的工具集，多个用逗号分隔
+- `read_only=true`：启用只读模式
 
-### 本地工具配置
+### 本地服务配置
 
-当您通过 Docker 或源码在本地运行服务时，拥有完全的配置权限。
+#### 1. 环境变量
 
-#### 1. 通过环境变量配置
-
-这是最常见的本地配置方式，尤其是在 Docker 环境中。
-
-| 变量 | 描述 | 必需 | 默认值 |
+| 变量 | 说明 | 必填 | 默认值 |
 |---|---|---|---|
-| `FLASHDUTY_APP_KEY` | Flashduty APP 密钥 | ✅ | - |
-| `FLASHDUTY_TOOLSETS` | 要启用的工具集（逗号分隔） | ❌ | 所有工具集 |
-| `FLASHDUTY_READ_ONLY` | 限制为只读操作 (`1` 或 `true`) | ❌ | `false` |
-| `FLASHDUTY_BASE_URL` | Flashduty API 基础 URL | ❌ | `https://api.flashcat.cloud` |
+| `FLASHDUTY_APP_KEY` | Flashduty APP Key | ✅ | - |
+| `FLASHDUTY_TOOLSETS` | 启用的工具集（逗号分隔） | ❌ | 全部 |
+| `FLASHDUTY_READ_ONLY` | 只读模式（`1` 或 `true`） | ❌ | `false` |
+| `FLASHDUTY_OUTPUT_FORMAT` | 输出格式（`json` 或 `toon`） | ❌ | `json` |
+| `FLASHDUTY_BASE_URL` | API 地址 | ❌ | `https://api.flashcat.cloud` |
 | `FLASHDUTY_LOG_FILE` | 日志文件路径 | ❌ | stderr |
-| `FLASHDUTY_ENABLE_COMMAND_LOGGING` | 启用命令日志记录 | ❌ | `false` |
+| `FLASHDUTY_ENABLE_COMMAND_LOGGING` | 记录请求日志 | ❌ | `false` |
 
-**Docker 示例:**
+**Docker 示例：**
 
 ```bash
 docker run -i --rm \
   -e FLASHDUTY_APP_KEY=<your-app-key> \
-  -e FLASHDUTY_TOOLSETS="flashduty_incidents,flashduty_teams" \
+  -e FLASHDUTY_TOOLSETS="incidents,users,channels" \
   -e FLASHDUTY_READ_ONLY=1 \
   registry.flashcat.cloud/public/flashduty-mcp-server
 ```
 
-#### 2. 通过命令行参数配置
-
-如果您直接从源码构建和运行二进制文件，可以使用命令行参数。
+#### 2. 命令行参数
 
 ```bash
 ./flashduty-mcp-server stdio \
   --app-key your_app_key_here \
-  --toolsets flashduty_incidents,flashduty_teams \
+  --toolsets incidents,users,channels \
   --read-only
 ```
 
-可用的命令行参数：
-- `--app-key`: Flashduty APP 密钥（替代 `FLASHDUTY_APP_KEY` 环境变量）
-- `--toolsets`: 要启用的工具集（逗号分隔）
-- `--read-only`: 启用只读模式
-- `--base-url`: Flashduty API 基础 URL
-- `--log-file`: 日志文件路径
-- `--enable-command-logging`: 启用命令日志记录
-- `--export-translations`: 将翻译保存到 JSON 文件
+支持的参数：
+- `--app-key`：Flashduty APP Key
+- `--toolsets`：启用的工具集
+- `--read-only`：只读模式
+- `--output-format`：输出格式（`json` 或 `toon`）
+- `--base-url`：API 地址
+- `--log-file`：日志文件路径
+- `--enable-command-logging`：记录请求日志
+- `--export-translations`：导出翻译配置
 
-> 注意：命令行参数的优先级高于环境变量。对于工具集配置，如果同时设置了 `FLASHDUTY_TOOLSETS` 环境变量和 `--toolsets` 参数，命令行参数优先生效。
+> **注意：** 命令行参数优先级高于环境变量。
 
-#### 3. 国际化 / 覆盖描述 (仅限本地)
+#### 3. TOON 输出格式
 
-覆盖工具描述的功能仅在本地部署时可用。您可以通过创建 `flashduty-mcp-server-config.json` 文件或设置环境变量来实现。
+服务支持 [TOON (Token-Oriented Object Notation)](https://github.com/toon-format/toon) 格式，可显著降低 token 消耗（约 30-50%），特别适合 LLM 场景。
 
-**通过 JSON 文件:**
+**JSON 格式（默认）：**
+```json
+{"members":[{"person_id":1,"person_name":"Alice"},{"person_id":2,"person_name":"Bob"}],"total":2}
+```
+
+**TOON 格式（紧凑）：**
+```
+members[2]{person_id,person_name}:
+  1,Alice
+  2,Bob
+total: 2
+```
+
+启用方式：
+
+```bash
+# 环境变量
+export FLASHDUTY_OUTPUT_FORMAT=toon
+
+# 命令行参数
+./flashduty-mcp-server stdio --output-format toon
+```
+
+> **提示：** TOON 格式对统一结构的对象数组（如成员列表、故障列表）效果最佳，主流 LLM 均可正确解析。
+
+#### 4. 国际化 / 自定义描述（仅本地）
+
+可通过配置文件或环境变量覆盖工具描述：
+
+**配置文件方式：**
 
 在二进制文件同目录下创建 `flashduty-mcp-server-config.json`：
 ```json
 {
-  "TOOL_CREATE_INCIDENT_DESCRIPTION": "an alternative description",
-  "TOOL_LIST_TEAMS_DESCRIPTION": "List all teams in Flashduty account"
+  "TOOL_CREATE_INCIDENT_DESCRIPTION": "自定义描述",
+  "TOOL_LIST_TEAMS_DESCRIPTION": "列出账户中的所有团队"
 }
 ```
 
-**通过环境变量:**
+**环境变量方式：**
 
 ```sh
-export FLASHDUTY_MCP_TOOL_CREATE_INCIDENT_DESCRIPTION="an alternative description"
+export FLASHDUTY_MCP_TOOL_CREATE_INCIDENT_DESCRIPTION="自定义描述"
 ```
 
 ---
 
-## 可用的工具集
+## 工具集
 
-以下是所有可用的工具集，默认全部启用。您也可以使用 `all` 来代表所有工具集。
+默认启用全部工具集，也可使用 `all` 代表全部。
 
-| 工具集 | 描述 |
-| --- | --- |
-| `flashduty_incidents` | Flashduty 故障管理工具 |
-| `flashduty_members` | Flashduty 成员管理工具 |
-| `flashduty_teams` | Flashduty 团队管理工具 |
-| `flashduty_channels` | Flashduty 协作空间管理工具 |
+| 工具集 | 说明 | 工具数 |
+| --- | --- | --- |
+| `incidents` | 故障生命周期管理 | 6 |
+| `changes` | 变更记录查询 | 1 |
+| `status_page` | 状态页管理 | 4 |
+| `users` | 成员和团队查询 | 2 |
+| `channels` | 协作空间和分派策略 | 2 |
+| `fields` | 自定义字段定义 | 1 |
 
----
-
-## 工具
-
-该服务基于 Flashduty API 提供以下工具集：
-
-### `flashduty_members` - 成员管理工具
-- `flashduty_member_infos` - 通过人员 ID 获取成员信息
-
-### `flashduty_teams` - 团队管理工具
-- `flashduty_teams_infos` - 通过团队 ID 获取团队信息
-
-### `flashduty_channels` - 协作空间管理工具
-- `flashduty_channels_infos` - 通过协作空间 ID 获取协作空间信息
-
-### `flashduty_incidents` - 故障管理工具
-- `flashduty_incidents_infos` - 通过故障 ID 获取故障信息
-- `flashduty_list_incidents` - 使用综合过滤器列出故障
-- `flashduty_list_past_incidents` - 列出类似的历史故障
-- `flashduty_get_incident_timeline` - 获取故障时间线和动态
-- `flashduty_get_incident_alerts` - 获取与故障相关的警报
-- `flashduty_create_incident` - 创建一个新故障
-- `flashduty_ack_incident` - 确认故障
-- `flashduty_resolve_incident` - 解决故障
-- `flashduty_assign_incident` - 将故障分配给人员或升级规则
-- `flashduty_add_responder` - 为故障添加响应者
-- `flashduty_snooze_incident` - 暂停故障一段时间
-- `flashduty_merge_incident` - 将多个故障合并为一个
-- `flashduty_comment_incident` - 为故障添加评论
-- `flashduty_update_incident_title` - 更新故障标题
-- `flashduty_update_incident_description` - 更新故障描述
-- `flashduty_update_incident_impact` - 更新故障影响
-- `flashduty_update_incident_root_cause` - 更新故障根本原因
-- `flashduty_update_incident_resolution` - 更新故障解决方案
-- `flashduty_update_incident_severity` - 更新故障严重性
-- `flashduty_update_incident_fields` - 更新自定义字段
+**共计 16 个工具**
 
 ---
 
-## 库的使用
+## 工具列表
 
-该模块导出的 Go API 目前应被视为不稳定，并可能发生重大更改。将来，我们可能会提供稳定性；如果有用例认为这很有价值，请提交问题。
+### `incidents` - 故障管理 (6)
+- `query_incidents` - 查询故障（含时间线、告警、响应人等完整信息）
+- `create_incident` - 创建故障
+- `update_incident` - 更新故障（标题、描述、严重程度、自定义字段）
+- `ack_incident` - 认领故障
+- `close_incident` - 关闭故障
+- `list_similar_incidents` - 查找相似历史故障
 
-## 许可证
+### `changes` - 变更管理 (1)
+- `query_changes` - 查询变更记录
 
-该项目根据 MIT 许可证授权 - 有关详细信息，请参阅 [LICENSE](LICENSE) 文件。 
+### `status_page` - 状态页 (4)
+- `query_status_pages` - 查询状态页配置
+- `list_status_changes` - 查询状态页变更事件
+- `create_status_incident` - 创建状态页故障
+- `create_change_timeline` - 添加变更时间线
+
+### `users` - 成员管理 (2)
+- `query_members` - 查询成员
+- `query_teams` - 查询团队（含成员详情）
+
+### `channels` - 协作空间 (2)
+- `query_channels` - 查询协作空间
+- `query_escalation_rules` - 查询分派规则
+
+### `fields` - 字段管理 (1)
+- `query_fields` - 查询自定义字段定义
+
+---
+
+## 作为库使用
+
+本项目导出的 Go API 目前处于不稳定状态，可能会有 breaking changes。如有稳定 API 需求，欢迎提 Issue。
+
+## 开源协议
+
+本项目基于 MIT 协议开源，详见 [LICENSE](LICENSE) 文件。
