@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // Client represents a Flashduty API client
@@ -38,10 +39,12 @@ func NewClient(appKey, baseURL, userAgent string) (*Client, error) {
 	}
 
 	return &Client{
-		httpClient: &http.Client{},
-		baseURL:    parsedURL,
-		appKey:     appKey,
-		userAgent:  userAgent,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+		baseURL:   parsedURL,
+		appKey:    appKey,
+		userAgent: userAgent,
 	}, nil
 }
 
@@ -62,8 +65,14 @@ func (c *Client) makeRequest(ctx context.Context, method, path string, body inte
 		reqBody = bytes.NewBuffer(jsonBody)
 	}
 
+	// Parse path to handle query parameters correctly
+	parsedPath, err := url.Parse(strings.TrimPrefix(path, "/"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse path: %w", err)
+	}
+
 	// Construct full URL with app_key query parameter
-	fullURL := c.baseURL.ResolveReference(&url.URL{Path: strings.TrimPrefix(path, "/")})
+	fullURL := c.baseURL.ResolveReference(parsedPath)
 	query := fullURL.Query()
 	query.Set("app_key", c.appKey)
 	fullURL.RawQuery = query.Encode()
@@ -74,7 +83,9 @@ func (c *Client) makeRequest(ctx context.Context, method, path string, body inte
 	}
 
 	// Set headers
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("Accept", "application/json")
 	if c.userAgent != "" {
 		req.Header.Set("User-Agent", c.userAgent)
@@ -82,16 +93,43 @@ func (c *Client) makeRequest(ctx context.Context, method, path string, body inte
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
+		// Sanitize error to avoid leaking app_key in logs
+		return nil, fmt.Errorf("failed to make request to %s %s: %v", method, sanitizeURL(fullURL), sanitizeError(err))
 	}
 
 	return resp, nil
 }
 
-// parseResponse parses the HTTP response into the given interface
-func parseResponse(resp *http.Response, v interface{}) error {
-	defer func() { _ = resp.Body.Close() }()
+// sanitizeURL removes sensitive query parameters from URL for safe logging
+func sanitizeURL(u *url.URL) string {
+	sanitized := *u
+	q := sanitized.Query()
+	if q.Has("app_key") {
+		q.Set("app_key", "[REDACTED]")
+	}
+	sanitized.RawQuery = q.Encode()
+	return sanitized.String()
+}
 
+// sanitizeError removes potential URL with sensitive data from error messages
+func sanitizeError(err error) string {
+	errStr := err.Error()
+	// Remove any app_key=xxx patterns from error messages
+	if idx := strings.Index(errStr, "app_key="); idx != -1 {
+		// Find the end of the app_key value (next & or end of string)
+		endIdx := strings.IndexAny(errStr[idx:], "& ")
+		if endIdx == -1 {
+			errStr = errStr[:idx] + "app_key=[REDACTED]"
+		} else {
+			errStr = errStr[:idx] + "app_key=[REDACTED]" + errStr[idx+endIdx:]
+		}
+	}
+	return errStr
+}
+
+// parseResponse parses the HTTP response into the given interface.
+// Note: caller is responsible for closing resp.Body.
+func parseResponse(resp *http.Response, v interface{}) error {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)

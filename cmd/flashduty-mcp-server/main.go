@@ -6,11 +6,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/flashcatcloud/flashduty-mcp-server/internal/flashduty"
-	flashdutyPkg "github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+
+	"github.com/flashcatcloud/flashduty-mcp-server/internal/flashduty"
+	flashdutyPkg "github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 )
 
 // These variables are set by the build process using ldflags.
@@ -60,6 +61,7 @@ var (
 				APPKey:               appKey,
 				EnabledToolsets:      enabledToolsets,
 				ReadOnly:             viper.GetBool("read-only"),
+				OutputFormat:         viper.GetString("output-format"),
 				ExportTranslations:   viper.GetBool("export-translations"),
 				EnableCommandLogging: viper.GetBool("enable-command-logging"),
 				LogFilePath:          viper.GetString("log-file"),
@@ -72,7 +74,7 @@ var (
 		Use:   "http",
 		Short: "Start HTTP server",
 		Long:  `Start a streamable HTTP server.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			httpServerConfig := flashduty.HTTPServerConfig{
 				Version:     version,
 				Commit:      commit,
@@ -95,6 +97,7 @@ func init() {
 	rootCmd.PersistentFlags().String("app-key", "", "Flashduty APP key (can also be set via FLASHDUTY_APP_KEY environment variable)")
 	rootCmd.PersistentFlags().StringSlice("toolsets", flashdutyPkg.DefaultTools, "An optional comma separated list of groups of tools to allow, defaults to enabling all")
 	rootCmd.PersistentFlags().Bool("read-only", false, "Restrict the server to read-only operations")
+	rootCmd.PersistentFlags().String("output-format", "json", "Output format for tool results: json (default) or toon (Token-Oriented Object Notation for reduced token usage)")
 	rootCmd.PersistentFlags().String("log-file", "", "Path to log file")
 	rootCmd.PersistentFlags().Bool("enable-command-logging", false, "When enabled, the server will log all command requests and responses to the log file")
 	rootCmd.PersistentFlags().Bool("export-translations", false, "Save translations to a JSON file")
@@ -107,6 +110,7 @@ func init() {
 	_ = viper.BindPFlag("app_key", rootCmd.PersistentFlags().Lookup("app-key"))
 	_ = viper.BindPFlag("toolsets", rootCmd.PersistentFlags().Lookup("toolsets"))
 	_ = viper.BindPFlag("read-only", rootCmd.PersistentFlags().Lookup("read-only"))
+	_ = viper.BindPFlag("output-format", rootCmd.PersistentFlags().Lookup("output-format"))
 	_ = viper.BindPFlag("log-file", rootCmd.PersistentFlags().Lookup("log-file"))
 	_ = viper.BindPFlag("enable-command-logging", rootCmd.PersistentFlags().Lookup("enable-command-logging"))
 	_ = viper.BindPFlag("export-translations", rootCmd.PersistentFlags().Lookup("export-translations"))

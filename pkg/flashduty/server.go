@@ -1,7 +1,6 @@
 package flashduty
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -76,12 +75,6 @@ func OptionalInt(r mcp.CallToolRequest, p string) (int, error) {
 		return 0, err
 	}
 	return int(v), nil
-}
-
-// MarshalledTextResult marshals the given value to JSON and returns it as a text result
-func MarshalledTextResult(v any) *mcp.CallToolResult {
-	r, _ := json.Marshal(v)
-	return mcp.NewToolResultText(string(r))
 }
 
 // ToBoolPtr converts a bool to a *bool pointer.

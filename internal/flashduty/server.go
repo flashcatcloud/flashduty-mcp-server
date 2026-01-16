@@ -13,13 +13,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
+	"github.com/sirupsen/logrus"
+
 	pkgerrors "github.com/flashcatcloud/flashduty-mcp-server/pkg/errors"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 	mcplog "github.com/flashcatcloud/flashduty-mcp-server/pkg/log"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
-	"github.com/sirupsen/logrus"
 )
 
 type FlashdutyConfig struct {
@@ -115,6 +116,9 @@ type StdioServerConfig struct {
 	// ReadOnly indicates if we should only register read-only tools
 	ReadOnly bool
 
+	// OutputFormat specifies the format for tool results (json or toon)
+	OutputFormat string
+
 	// ExportTranslations indicates if we should export translations
 	ExportTranslations bool
 
@@ -130,6 +134,9 @@ func RunStdioServer(cfg StdioServerConfig) error {
 	// Create app context
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Set the global output format
+	flashduty.SetOutputFormat(flashduty.ParseOutputFormat(cfg.OutputFormat))
 
 	t, dumpTranslations := translations.TranslationHelper()
 
@@ -164,11 +171,6 @@ func RunStdioServer(cfg StdioServerConfig) error {
 	}
 	stdLogger := log.New(logrusLogger.Writer(), "stdioserver", 0)
 	stdioServer.SetErrorLogger(stdLogger)
-
-	if cfg.ExportTranslations {
-		// Once server is initialized, all translations are loaded
-		dumpTranslations()
-	}
 
 	// Start listening for messages
 	errC := make(chan error, 1)

@@ -68,12 +68,12 @@ func Test(toolName string, tool any) error {
 
 func writeSnap(snapPath string, contents []byte) error {
 	// Ensure the directory exists
-	if err := os.MkdirAll(filepath.Dir(snapPath), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(snapPath), 0o700); err != nil {
 		return fmt.Errorf("failed to create snapshot directory: %w", err)
 	}
 
 	// Write the snapshot file
-	if err := os.WriteFile(snapPath, contents, 0600); err != nil {
+	if err := os.WriteFile(snapPath, contents, 0o600); err != nil {
 		return fmt.Errorf("failed to write snapshot file: %w", err)
 	}
 
