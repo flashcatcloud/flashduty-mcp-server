@@ -35,7 +35,7 @@ For Cursors that support Remote MCP, use the following configuration:
 {
   "mcpServers": {
     "flashduty": {
-      "url": "https://mcp.flashcat.cloud/flashduty",
+      "url": "https://mcp.flashcat.cloud/mcp",
       "authorization_token": "Bearer <your_flashduty_app_key>"
     }
   }
@@ -135,7 +135,7 @@ Configuration methods are divided into **Remote Service Configuration** and **Lo
 
 ### Remote Server Configuration
 
-When using the public remote service (`https://mcp.flashcat.cloud/flashduty`), you can dynamically configure it by appending query parameters to the URL.
+When using the public remote service (`https://mcp.flashcat.cloud/mcp`), you can dynamically configure it by appending query parameters to the URL.
 
 #### Configuration Example
 
@@ -145,7 +145,7 @@ Here is an example of configuring the remote service, specifying toolsets and re
 {
   "mcpServers": {
     "flashduty": {
-      "url": "https://mcp.flashcat.cloud/flashduty?toolsets=incidents,users&read_only=true",
+      "url": "https://mcp.flashcat.cloud/mcp?toolsets=incidents,users&read_only=true",
       "authorization_token": "Bearer <your_flashduty_app_key>"
     }
   }

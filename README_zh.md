@@ -33,7 +33,7 @@ Flashduty MCP Server 是一个基于 [Model Context Protocol (MCP)](https://mode
 {
   "mcpServers": {
     "flashduty": {
-      "url": "https://mcp.flashcat.cloud/flashduty",
+      "url": "https://mcp.flashcat.cloud/mcp",
       "authorization_token": "Bearer <your_flashduty_app_key>"
     }
   }
@@ -132,7 +132,7 @@ Flashduty MCP Server 支持以下配置：
 {
   "mcpServers": {
     "flashduty": {
-      "url": "https://mcp.flashcat.cloud/flashduty?toolsets=incidents,users&read_only=true",
+      "url": "https://mcp.flashcat.cloud/mcp?toolsets=incidents,users&read_only=true",
       "authorization_token": "Bearer <your_flashduty_app_key>"
     }
   }

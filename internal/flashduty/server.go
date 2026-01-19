@@ -306,7 +306,8 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 	)
 
 	mux := http.NewServeMux()
-	mux.Handle("/flashduty", httpServer)
+	mux.Handle("/mcp", httpServer)
+	mux.Handle("/flashduty", httpServer) // Keep for backward compatibility
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
