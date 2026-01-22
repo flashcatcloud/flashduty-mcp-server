@@ -130,7 +130,8 @@ func sanitizeError(err error) string {
 // parseResponse parses the HTTP response into the given interface.
 // Note: caller is responsible for closing resp.Body.
 func parseResponse(resp *http.Response, v interface{}) error {
-	body, err := io.ReadAll(resp.Body)
+	// Limit reading to 4KB to prevent potential OOM
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
@@ -146,6 +147,20 @@ func parseResponse(resp *http.Response, v interface{}) error {
 	}
 
 	return nil
+}
+
+// handleAPIError reads the response body and returns a detailed error message.
+// This function should be called when resp.StatusCode != http.StatusOK.
+// It returns the full response body which contains request_id for debugging.
+func handleAPIError(resp *http.Response) error {
+	// Limit reading to 4KB to prevent potential OOM with unexpected large response bodies
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return fmt.Errorf("API request failed with HTTP status %d (failed to read response: %v)", resp.StatusCode, err)
+	}
+
+	// Return full response body for better debugging (contains request_id, error code, message)
+	return fmt.Errorf("API request failed with HTTP status %d: %s", resp.StatusCode, string(body))
 }
 
 // FlashdutyResponse represents the standard Flashduty API response structure

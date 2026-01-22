@@ -31,7 +31,7 @@ func (c *Client) fetchIncidentTimeline(ctx context.Context, incidentID string) (
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("timeline API request failed with HTTP status %d", resp.StatusCode)
+		return nil, handleAPIError(resp)
 	}
 
 	var result struct {
@@ -69,7 +69,7 @@ func (c *Client) fetchIncidentAlerts(ctx context.Context, incidentID string, lim
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, fmt.Errorf("alerts API request failed with HTTP status %d", resp.StatusCode)
+		return nil, 0, handleAPIError(resp)
 	}
 
 	var result struct {
@@ -144,7 +144,7 @@ func (c *Client) fetchPersonInfos(ctx context.Context, personIDs []int64) (map[i
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("person API request failed with HTTP status %d", resp.StatusCode)
+		return nil, handleAPIError(resp)
 	}
 
 	var result struct {
@@ -214,7 +214,7 @@ func (c *Client) fetchChannelInfos(ctx context.Context, channelIDs []int64) (map
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("channel API request failed with HTTP status %d", resp.StatusCode)
+		return nil, handleAPIError(resp)
 	}
 
 	var result struct {

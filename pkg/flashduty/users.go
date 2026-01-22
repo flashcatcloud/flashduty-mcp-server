@@ -21,7 +21,8 @@ const queryMembersDescription = `Query members (users) in the account.
 - email (optional): Search by email
 
 **Returns:**
-- Member list with ID, name, email, and team memberships`
+- Member list with ID, name, email, and team memberships
+- When listing members, returns up to 100 results per page (default limit)`
 
 // QueryMembers creates a tool to query members
 func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -91,7 +92,7 @@ func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API request failed with HTTP status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result MemberListResponse
@@ -123,7 +124,8 @@ const queryTeamsDescription = `Query teams in the account.
 - name (optional): Search by team name
 
 **Returns:**
-- Team list with members (names and emails)`
+- Team list with members (names and emails)
+- When listing teams, returns up to 20 results per page (default limit, max 100)`
 
 // QueryTeams creates a tool to query teams
 func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -162,7 +164,7 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 				defer func() { _ = resp.Body.Close() }()
 
 				if resp.StatusCode != http.StatusOK {
-					return mcp.NewToolResultError(fmt.Sprintf("API request failed with HTTP status %d", resp.StatusCode)), nil
+					return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 				}
 
 				var result FlashdutyResponse
@@ -192,7 +194,7 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API request failed with HTTP status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result struct {

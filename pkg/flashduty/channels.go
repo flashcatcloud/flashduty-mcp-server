@@ -15,11 +15,12 @@ import (
 const queryChannelsDescription = `Query collaboration spaces (channels).
 
 **Parameters:**
-- channel_ids (optional): Comma-separated channel IDs for direct lookup
-- name (optional): Search by channel name
+- channel_ids (optional): Comma-separated channel IDs for direct lookup (max 1000)
+- name (optional): Search by channel name (case-insensitive substring match)
 
 **Returns:**
-- Channel list with team information`
+- Channel list with team information
+- When listing all channels, returns up to 100 results`
 
 // QueryChannels creates a tool to query channels
 func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -76,7 +77,7 @@ func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHel
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API request failed with HTTP status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result struct {
@@ -157,7 +158,7 @@ func QueryEscalationRules(getClient GetFlashdutyClientFn, t translations.Transla
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API request failed with HTTP status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result struct {

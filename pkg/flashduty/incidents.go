@@ -37,7 +37,12 @@ Returns complete incident information including:
 - progress (optional): Filter by status - Triggered, Processing, Closed
 - severity (optional): Filter by severity - Info, Warning, Critical
 - channel_id (optional): Filter by collaboration space ID
-- start_time, end_time (optional): Unix timestamp range (required if no incident_ids)
+- start_time, end_time (optional): Unix timestamp in seconds. Required if no incident_ids.
+  **Time constraints:**
+  - start_time must be less than end_time
+  - Time range (end_time - start_time) must not exceed 31 days (2678400 seconds)
+  - end_time must be within the data retention period (account-specific, typically 365 days)
+  - If you get a time range error, use more recent timestamps (e.g., last 7-30 days from now)
 - title (optional): Title keyword search
 - limit (optional): Max results (default 20)
 - include_alerts (optional): Include alerts preview (default true)
@@ -342,7 +347,7 @@ func (c *Client) fetchIncidentsByIDs(ctx context.Context, incidentIDs []string) 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with HTTP status %d", resp.StatusCode)
+		return nil, handleAPIError(resp)
 	}
 
 	var result struct {
@@ -392,7 +397,7 @@ func (c *Client) fetchIncidentsByFilters(ctx context.Context, progress, severity
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with HTTP status %d", resp.StatusCode)
+		return nil, handleAPIError(resp)
 	}
 
 	var result struct {
@@ -416,10 +421,10 @@ func (c *Client) fetchIncidentsByFilters(ctx context.Context, progress, severity
 const createIncidentDescription = `Create a new incident in Flashduty.
 
 **Parameters:**
-- title (required): Incident title
+- title (required): Incident title (3-200 characters)
 - severity (required): Info, Warning, or Critical
 - channel_id (optional): Collaboration space ID
-- description (optional): Incident description
+- description (optional): Incident description (max 6144 characters)
 - assigned_to (optional): Comma-separated person IDs to assign
 
 **Returns:**
@@ -500,14 +505,15 @@ const updateIncidentDescription = `Update an existing incident.
 
 **Parameters:**
 - incident_id (required): Incident ID to update
-- title (optional): New title
-- description (optional): New description
+- title (optional): New title (3-200 characters)
+- description (optional): New description (max 6144 characters)
 - severity (optional): New severity (Info, Warning, Critical)
 - custom_fields (optional): JSON object of custom field updates, e.g. {"field_name": "value"}
 
 **Notes:**
 - Only provided fields will be updated
-- Use query_fields to discover available custom fields`
+- Use query_fields to discover available custom fields
+- Custom field names must match regexp: ^[a-z][a-z0-9_]*$`
 
 // UpdateIncident creates a tool to update an incident
 func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -627,7 +633,7 @@ func (c *Client) updateIncidentField(ctx context.Context, incidentID, endpoint, 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with HTTP status %d", resp.StatusCode)
+		return handleAPIError(resp)
 	}
 
 	var result FlashdutyResponse
@@ -655,7 +661,7 @@ func (c *Client) updateCustomField(ctx context.Context, incidentID, fieldName st
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with HTTP status %d", resp.StatusCode)
+		return handleAPIError(resp)
 	}
 
 	var result FlashdutyResponse
@@ -713,7 +719,7 @@ func AckIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API request failed with HTTP status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result FlashdutyResponse
@@ -776,7 +782,7 @@ func CloseIncident(getClient GetFlashdutyClientFn, t translations.TranslationHel
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API request failed with HTTP status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result FlashdutyResponse
@@ -847,7 +853,7 @@ func ListSimilarIncidents(getClient GetFlashdutyClientFn, t translations.Transla
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API request failed with HTTP status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result struct {

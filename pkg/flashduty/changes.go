@@ -20,9 +20,13 @@ that may be correlated with incidents.
 **Parameters:**
 - change_ids (optional): Comma-separated change IDs for direct lookup
 - channel_id (optional): Filter by collaboration space ID
-- start_time, end_time (optional): Unix timestamp range
+- start_time, end_time (optional): Unix timestamp in seconds.
+  **Time constraints:**
+  - start_time must be less than end_time
+  - Time range (end_time - start_time) must not exceed 31 days (2678400 seconds)
+  - If not specified, defaults to last 1 hour
 - type (optional): Filter by change type
-- limit (optional): Max results (default 20)
+- limit (optional): Max results (1-100, default 20)
 
 **Returns:**
 - Change records with enriched channel and creator names`
@@ -87,7 +91,7 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API failed with status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result struct {

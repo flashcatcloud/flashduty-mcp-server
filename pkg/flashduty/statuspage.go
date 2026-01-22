@@ -47,7 +47,7 @@ func QueryStatusPages(getClient GetFlashdutyClientFn, t translations.Translation
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API failed with status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result struct {
@@ -141,7 +141,9 @@ const listStatusChangesDescription = `List active change events (incidents/maint
 - type (required): Change type - "incident" or "maintenance"
 
 **Returns:**
-- List of active change events (non-resolved/completed)`
+- List of active change events (non-resolved/completed)
+- For incidents: returns those with status investigating/identified/monitoring (not resolved)
+- For maintenances: returns those with status scheduled/ongoing (not completed)`
 
 // ListStatusChanges creates a tool to list status page changes
 func ListStatusChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -181,7 +183,7 @@ func ListStatusChanges(getClient GetFlashdutyClientFn, t translations.Translatio
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API failed with status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result struct {
@@ -216,15 +218,19 @@ const createStatusIncidentDescription = `Create a new incident on a status page.
 
 **Parameters:**
 - page_id (required): Status page ID
-- title (required): Incident title
-- message (optional): Initial update message describing the incident
+- title (required): Incident title (max 255 characters)
+- message (optional): Initial update message describing the incident (required for the incident description)
 - status (optional): Status - investigating, identified, monitoring, resolved (default: investigating)
 - affected_components (optional): Comma-separated component IDs with status, format: "id1:degraded,id2:partial_outage"
-  - Component statuses: operational, degraded, partial_outage, full_outage
+  - Component statuses for incidents: degraded, partial_outage, full_outage
+  - At least one component change is required
 - notify_subscribers (optional): Whether to notify subscribers (default: true)
 
 **Returns:**
-- Created change event ID`
+- Created change event ID
+
+**Notes:**
+- The message/description field is required for creating an incident`
 
 // CreateStatusIncident creates a tool to create status page incident
 func CreateStatusIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -340,9 +346,11 @@ const createChangeTimelineDescription = `Add a timeline update to a status page 
 - page_id (required): Status page ID
 - change_id (required): Change event ID to update
 - message (required): Update message describing the change
-- at (optional): Timestamp for the update (Unix timestamp, default: now)
-- status (optional): New status - investigating, identified, monitoring, resolved
+- at (optional): Timestamp for the update (Unix timestamp in seconds, default: now)
+- status (optional): New status for incidents - investigating, identified, monitoring, resolved
+  - For maintenances use: scheduled, ongoing, completed
 - component_changes (optional): JSON array of component status changes, e.g. [{"component_id":"xxx","status":"degraded"}]
+  - Component statuses: operational, degraded, partial_outage, full_outage
 
 **Use cases:**
 - Post investigation updates
@@ -350,7 +358,7 @@ const createChangeTimelineDescription = `Add a timeline update to a status page 
 - Update affected components
 
 **Returns:**
-- Created timeline entry ID`
+- Success confirmation`
 
 // CreateChangeTimeline creates a tool to add timeline entry to status change
 func CreateChangeTimeline(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {

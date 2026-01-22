@@ -18,14 +18,18 @@ Use this tool to discover available fields before updating incidents.
 
 **Parameters:**
 - field_ids (optional): Comma-separated field IDs for direct lookup
-- field_name (optional): Search by field name
+- field_name (optional): Search by exact field name (field_name must match regexp: ^[a-z][a-z0-9_]*$)
 
 **Returns:**
 - Field definitions including:
   - field_type: checkbox, multi_select, single_select, text
   - value_type: string, bool, float
   - options: available values for select fields
-  - default_value: default value if set`
+  - default_value: default value if set
+
+**Notes:**
+- Maximum 15 custom fields allowed per account
+- Returns all fields (no pagination needed)`
 
 // QueryFields creates a tool to query custom field definitions
 func QueryFields(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -54,7 +58,7 @@ func QueryFields(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(fmt.Sprintf("API failed with status %d", resp.StatusCode)), nil
+				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
 			}
 
 			var result struct {
