@@ -34,7 +34,9 @@ Flashduty MCP Server 是一个基于 [Model Context Protocol (MCP)](https://mode
   "mcpServers": {
     "flashduty": {
       "url": "https://mcp.flashcat.cloud/mcp",
-      "authorization_token": "Bearer <your_flashduty_app_key>"
+      "headers": {
+        "Authorization": "Bearer <your_flashduty_app_key>"
+      }
     }
   }
 }
@@ -133,12 +135,15 @@ Flashduty MCP Server 支持以下配置：
   "mcpServers": {
     "flashduty": {
       "url": "https://mcp.flashcat.cloud/mcp?toolsets=incidents,users&read_only=true",
-      "authorization_token": "Bearer <your_flashduty_app_key>"
+      "headers": {
+        "Authorization": "Bearer <your_flashduty_app_key>"
+      }
     }
   }
 }
 ```
 
+- `headers.Authorization`：用于认证的 Flashduty APP Key，需添加 `Bearer ` 前缀
 - `toolsets=...`：启用指定的工具集，多个用逗号分隔
 - `read_only=true`：启用只读模式
 
@@ -236,6 +241,14 @@ export FLASHDUTY_OUTPUT_FORMAT=toon
 export FLASHDUTY_MCP_TOOL_CREATE_INCIDENT_DESCRIPTION="自定义描述"
 ```
 
+#### 5. 日志与安全
+
+服务内置了结构化日志和增强的安全特性：
+
+- **数据脱敏**：日志会自动对敏感信息（如 `APP_KEY` 和 `Authorization` 请求头）进行掩码处理，防止密钥泄露。
+- **日志截断**：对于过大的请求/响应体，日志会自动进行截断（默认 2KB），确保服务性能。
+- **链路追踪**：支持 W3C Trace Context 标准。日志中会自动关联 `trace_id`，方便跨服务追踪请求全链路趋势。
+
 ---
 
 ## 工具集
@@ -279,7 +292,7 @@ export FLASHDUTY_MCP_TOOL_CREATE_INCIDENT_DESCRIPTION="自定义描述"
 - `query_teams` - 查询团队（含成员详情）
 
 ### `channels` - 协作空间 (2)
-- `query_channels` - 查询协作空间
+- `query_channels` - 查询协作空间（含团队、创建者名称等富化信息）
 - `query_escalation_rules` - 查询分派规则
 
 ### `fields` - 字段管理 (1)

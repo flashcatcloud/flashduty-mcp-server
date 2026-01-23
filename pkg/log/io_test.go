@@ -2,10 +2,10 @@ package log
 
 import (
 	"bytes"
+	"log/slog"
 	"strings"
 	"testing"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,11 +17,7 @@ func TestLoggedReadWriter(t *testing.T) {
 
 		// Create logger with buffer to capture output
 		var logBuffer bytes.Buffer
-		logger := log.New()
-		logger.SetOutput(&logBuffer)
-		logger.SetFormatter(&log.TextFormatter{
-			DisableTimestamp: true,
-		})
+		logger := slog.New(slog.NewTextHandler(&logBuffer, nil))
 
 		lrw := NewIOLogger(reader, nil, logger)
 
@@ -44,11 +40,7 @@ func TestLoggedReadWriter(t *testing.T) {
 
 		// Create logger with buffer to capture output
 		var logBuffer bytes.Buffer
-		logger := log.New()
-		logger.SetOutput(&logBuffer)
-		logger.SetFormatter(&log.TextFormatter{
-			DisableTimestamp: true,
-		})
+		logger := slog.New(slog.NewTextHandler(&logBuffer, nil))
 
 		lrw := NewIOLogger(nil, &writeBuffer, logger)
 

@@ -36,7 +36,9 @@ For Cursors that support Remote MCP, use the following configuration:
   "mcpServers": {
     "flashduty": {
       "url": "https://mcp.flashcat.cloud/mcp",
-      "authorization_token": "Bearer <your_flashduty_app_key>"
+      "headers": {
+        "Authorization": "Bearer <your_flashduty_app_key>"
+      }
     }
   }
 }
@@ -146,12 +148,15 @@ Here is an example of configuring the remote service, specifying toolsets and re
   "mcpServers": {
     "flashduty": {
       "url": "https://mcp.flashcat.cloud/mcp?toolsets=incidents,users&read_only=true",
-      "authorization_token": "Bearer <your_flashduty_app_key>"
+      "headers": {
+        "Authorization": "Bearer <your_flashduty_app_key>"
+      }
     }
   }
 }
 ```
 
+- `headers.Authorization`: Your Flashduty APP key for authentication, prefixed with `Bearer `.
 - `toolsets=...`: Use a comma-separated list to specify the toolsets to enable (e.g., `incidents,users,channels`).
 - `read_only=true`: Enables read-only mode.
 
@@ -257,6 +262,14 @@ Create `flashduty-mcp-server-config.json` in the same directory as the binary:
 export FLASHDUTY_MCP_TOOL_CREATE_INCIDENT_DESCRIPTION="an alternative description"
 ```
 
+#### 5. Logging & Security
+
+The server provides structured logging and built-in security features:
+
+- **Data Masking**: Sensitive information such as `APP_KEY` and `Authorization` headers are automatically masked in logs to prevent accidental credential leakage.
+- **Log Truncation**: Large request/response bodies are automatically truncated in logs (default 2KB) to maintain performance.
+- **W3C Trace Context**: Supports W3C Trace Context (`traceparent`) for end-to-end observability. Trace IDs are automatically included in logs for easy request tracking.
+
 ---
 
 ## Available Toolsets
@@ -300,7 +313,7 @@ The following toolsets are available (all are on by default). You can also use `
 - `query_teams` - Query teams with member details
 
 ### `channels` - Collaboration Space and Escalation Rules (2 tools)
-- `query_channels` - Query collaboration spaces
+- `query_channels` - Query collaboration spaces with enriched data (team and creator names)
 - `query_escalation_rules` - Query escalation rules for a channel
 
 ### `fields` - Custom Field Definitions (1 tool)

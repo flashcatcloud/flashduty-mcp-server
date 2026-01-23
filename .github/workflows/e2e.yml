@@ -1,0 +1,53 @@
+name: E2E Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Run in debug mode (in-process, no Docker)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ENABLE_E2E_TESTS == 'true' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Set up Docker Buildx
+        if: ${{ github.event.inputs.debug != 'true' }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        if: ${{ github.event.inputs.debug != 'true' }}
+        run: docker build -t flashcat/e2e-flashduty-mcp-server .
+
+      - name: Run E2E tests
+        env:
+          FLASHDUTY_E2E_APP_KEY: ${{ secrets.FLASHDUTY_E2E_APP_KEY }}
+          FLASHDUTY_E2E_BASE_URL: ${{ secrets.FLASHDUTY_E2E_BASE_URL }}
+          FLASHDUTY_E2E_DEBUG: ${{ github.event.inputs.debug }}
+        run: |
+          if [ -z "$FLASHDUTY_E2E_APP_KEY" ]; then
+            echo "Error: FLASHDUTY_E2E_APP_KEY secret is not set"
+            exit 1
+          fi
+          go test -v --tags e2e ./e2e/... -timeout 10m

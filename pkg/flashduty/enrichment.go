@@ -181,6 +181,70 @@ func (c *Client) fetchPersonInfos(ctx context.Context, personIDs []int64) (map[i
 	return personMap, nil
 }
 
+// fetchTeamInfos fetches team information by IDs
+func (c *Client) fetchTeamInfos(ctx context.Context, teamIDs []int64) (map[int64]TeamInfo, error) {
+	if len(teamIDs) == 0 {
+		return make(map[int64]TeamInfo), nil
+	}
+
+	// Deduplicate team IDs
+	idSet := make(map[int64]struct{})
+	for _, id := range teamIDs {
+		if id != 0 {
+			idSet[id] = struct{}{}
+		}
+	}
+	uniqueIDs := make([]int64, 0, len(idSet))
+	for id := range idSet {
+		uniqueIDs = append(uniqueIDs, id)
+	}
+
+	if len(uniqueIDs) == 0 {
+		return make(map[int64]TeamInfo), nil
+	}
+
+	requestBody := map[string]interface{}{
+		"team_ids": uniqueIDs,
+	}
+
+	resp, err := c.makeRequest(ctx, "POST", "/team/infos", requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("unable to fetch team information: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, handleAPIError(resp)
+	}
+
+	var result struct {
+		Error *DutyError `json:"error,omitempty"`
+		Data  *struct {
+			Items []struct {
+				TeamID   int64  `json:"team_id"`
+				TeamName string `json:"team_name"`
+			} `json:"items"`
+		} `json:"data,omitempty"`
+	}
+	if err := parseResponse(resp, &result); err != nil {
+		return nil, err
+	}
+	if result.Error != nil {
+		return nil, fmt.Errorf("API error: %s - %s", result.Error.Code, result.Error.Message)
+	}
+
+	teamMap := make(map[int64]TeamInfo)
+	if result.Data != nil {
+		for _, item := range result.Data.Items {
+			teamMap[item.TeamID] = TeamInfo{
+				TeamID:   item.TeamID,
+				TeamName: item.TeamName,
+			}
+		}
+	}
+	return teamMap, nil
+}
+
 // fetchChannelInfos fetches channel information by IDs
 func (c *Client) fetchChannelInfos(ctx context.Context, channelIDs []int64) (map[int64]ChannelInfo, error) {
 	if len(channelIDs) == 0 {
@@ -224,6 +288,7 @@ func (c *Client) fetchChannelInfos(ctx context.Context, channelIDs []int64) (map
 				ChannelID   int64  `json:"channel_id"`
 				ChannelName string `json:"channel_name"`
 				TeamID      int64  `json:"team_id,omitempty"`
+				CreatorID   int64  `json:"creator_id,omitempty"`
 			} `json:"items"`
 		} `json:"data,omitempty"`
 	}
@@ -241,10 +306,71 @@ func (c *Client) fetchChannelInfos(ctx context.Context, channelIDs []int64) (map
 				ChannelID:   item.ChannelID,
 				ChannelName: item.ChannelName,
 				TeamID:      item.TeamID,
+				CreatorID:   item.CreatorID,
 			}
 		}
 	}
 	return channelMap, nil
+}
+
+// enrichChannels enriches channel information with team and creator names
+func (c *Client) enrichChannels(ctx context.Context, channels []ChannelInfo) ([]ChannelInfo, error) {
+	if len(channels) == 0 {
+		return channels, nil
+	}
+
+	// Collect all team IDs and creator IDs
+	teamIDs := make([]int64, 0)
+	personIDs := make([]int64, 0)
+	for _, ch := range channels {
+		if ch.TeamID != 0 {
+			teamIDs = append(teamIDs, ch.TeamID)
+		}
+		if ch.CreatorID != 0 {
+			personIDs = append(personIDs, ch.CreatorID)
+		}
+	}
+
+	// Fetch team and person info concurrently
+	var teamMap map[int64]TeamInfo
+	var personMap map[int64]PersonInfo
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		var err error
+		teamMap, err = c.fetchTeamInfos(gctx, teamIDs)
+		if err != nil {
+			// Graceful degradation: continue without team names
+			teamMap = make(map[int64]TeamInfo)
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		var err error
+		personMap, err = c.fetchPersonInfos(gctx, personIDs)
+		if err != nil {
+			// Graceful degradation: continue without creator names
+			personMap = make(map[int64]PersonInfo)
+		}
+		return nil
+	})
+
+	_ = g.Wait()
+
+	// Enrich channels
+	enriched := make([]ChannelInfo, len(channels))
+	for i, ch := range channels {
+		enriched[i] = ch
+		if t, ok := teamMap[ch.TeamID]; ok {
+			enriched[i].TeamName = t.TeamName
+		}
+		if p, ok := personMap[ch.CreatorID]; ok {
+			enriched[i].CreatorName = p.PersonName
+		}
+	}
+
+	return enriched, nil
 }
 
 // RawIncident represents raw incident data from API
@@ -379,46 +505,35 @@ func collectTimelinePersonIDs(items []RawTimelineItem) []int64 {
 	personIDs := make([]int64, 0)
 
 	for _, item := range items {
-		// Operator ID
 		if item.PersonID != 0 {
 			personIDs = append(personIDs, item.PersonID)
 		}
 
-		// Extract person IDs from detail based on event type
 		if item.Detail == nil {
 			continue
 		}
 
 		switch item.Type {
 		case "i_assign", "i_a_rspd":
-			// "to" field contains person IDs
-			if to, ok := item.Detail["to"].([]interface{}); ok {
-				for _, v := range to {
-					if id, ok := toInt64(v); ok && id != 0 {
-						personIDs = append(personIDs, id)
-					}
-				}
-			}
-			// "person_ids" field
-			if pids, ok := item.Detail["person_ids"].([]interface{}); ok {
-				for _, v := range pids {
-					if id, ok := toInt64(v); ok && id != 0 {
-						personIDs = append(personIDs, id)
-					}
-				}
-			}
+			personIDs = extractPersonIDsFromDetail(item.Detail, "to", personIDs)
+			personIDs = extractPersonIDsFromDetail(item.Detail, "person_ids", personIDs)
 		case "i_notify":
-			// "to" field in notify events
-			if to, ok := item.Detail["to"].([]interface{}); ok {
-				for _, v := range to {
-					if id, ok := toInt64(v); ok && id != 0 {
-						personIDs = append(personIDs, id)
-					}
-				}
-			}
+			personIDs = extractPersonIDsFromDetail(item.Detail, "to", personIDs)
 		}
 	}
 
+	return personIDs
+}
+
+// extractPersonIDsFromDetail extracts person IDs from a detail map field
+func extractPersonIDsFromDetail(detail map[string]any, field string, personIDs []int64) []int64 {
+	if values, ok := detail[field].([]interface{}); ok {
+		for _, v := range values {
+			if id, ok := toInt64(v); ok && id != 0 {
+				personIDs = append(personIDs, id)
+			}
+		}
+	}
 	return personIDs
 }
 
@@ -431,9 +546,8 @@ func toInt64(v interface{}) (int64, bool) {
 		return n, true
 	case int:
 		return int64(n), true
-	default:
-		return 0, false
 	}
+	return 0, false
 }
 
 // enrichTimelineItems enriches raw timeline items with person names
@@ -467,102 +581,47 @@ func enrichTimelineDetail(eventType string, detail map[string]any, personMap map
 		return nil
 	}
 
-	// Create a copy of detail to avoid modifying the original
-	enriched := make(map[string]any)
-	for k, v := range detail {
-		enriched[k] = v
-	}
+	enriched := copyMap(detail)
 
 	switch eventType {
-	case "i_comm":
-		// Comment event - just return as is
-		return enriched
-
 	case "i_notify":
-		// Notification event - enrich "to" person IDs
-		if to, ok := detail["to"].([]interface{}); ok {
-			enrichedTo := make([]map[string]any, 0, len(to))
-			for _, v := range to {
-				if id, ok := toInt64(v); ok {
-					entry := map[string]any{"person_id": id}
-					if p, ok := personMap[id]; ok {
-						entry["person_name"] = p.PersonName
-					}
-					enrichedTo = append(enrichedTo, entry)
-				}
-			}
-			enriched["to"] = enrichedTo
-		}
-		return enriched
-
+		enrichPersonIDsField(enriched, "to", personMap)
 	case "i_assign", "i_a_rspd":
-		// Assignment event - enrich "to" and "person_ids"
-		if to, ok := detail["to"].([]interface{}); ok {
-			enrichedTo := make([]map[string]any, 0, len(to))
-			for _, v := range to {
-				if id, ok := toInt64(v); ok {
-					entry := map[string]any{"person_id": id}
-					if p, ok := personMap[id]; ok {
-						entry["person_name"] = p.PersonName
-					}
-					enrichedTo = append(enrichedTo, entry)
-				}
-			}
-			enriched["to"] = enrichedTo
-		}
-		if pids, ok := detail["person_ids"].([]interface{}); ok {
-			enrichedPids := make([]map[string]any, 0, len(pids))
-			for _, v := range pids {
-				if id, ok := toInt64(v); ok {
-					entry := map[string]any{"person_id": id}
-					if p, ok := personMap[id]; ok {
-						entry["person_name"] = p.PersonName
-					}
-					enrichedPids = append(enrichedPids, entry)
-				}
-			}
-			enriched["person_ids"] = enrichedPids
-		}
-		return enriched
-
-	case "i_ack", "i_unack", "i_wake":
-		// Simple events without nested person IDs
-		return enriched
-
-	case "i_snooze":
-		// Snooze event - has "minutes" field
-		return enriched
-
-	case "i_rslv":
-		// Resolve event - has "from" field
-		return enriched
-
-	case "i_reopen":
-		// Reopen event - has "reason" field
-		return enriched
-
-	case "i_merge":
-		// Merge event - has source/target incidents
-		return enriched
-
-	case "i_new":
-		// New incident event
-		return enriched
-
-	case "i_r_rc", "i_r_desc", "i_r_rsltn", "i_r_resp", "i_r_impact", "i_r_title", "i_r_severity", "i_r_field":
-		// Field update events
-		return enriched
-
-	case "i_m_silence", "i_m_inhibat", "i_m_flapping", "i_storm":
-		// Suppression events
-		return enriched
-
-	case "i_custom":
-		// Custom action event
-		return enriched
-
-	default:
-		// Unknown type - return as is
-		return enriched
+		enrichPersonIDsField(enriched, "to", personMap)
+		enrichPersonIDsField(enriched, "person_ids", personMap)
 	}
+
+	return enriched
+}
+
+// copyMap creates a shallow copy of a map
+func copyMap(m map[string]any) map[string]any {
+	result := make(map[string]any, len(m))
+	for k, v := range m {
+		result[k] = v
+	}
+	return result
+}
+
+// enrichPersonIDsField enriches a field containing person IDs with person names
+func enrichPersonIDsField(enriched map[string]any, field string, personMap map[int64]PersonInfo) {
+	values, ok := enriched[field].([]interface{})
+	if !ok {
+		return
+	}
+
+	enrichedValues := make([]map[string]any, 0, len(values))
+	for _, v := range values {
+		id, ok := toInt64(v)
+		if !ok {
+			continue
+		}
+
+		entry := map[string]any{"person_id": id}
+		if p, ok := personMap[id]; ok {
+			entry["person_name"] = p.PersonName
+		}
+		enrichedValues = append(enrichedValues, entry)
+	}
+	enriched[field] = enrichedValues
 }

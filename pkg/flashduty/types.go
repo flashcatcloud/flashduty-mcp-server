@@ -79,12 +79,14 @@ type PersonInfo struct {
 	As         string `json:"as,omitempty" toon:"as,omitempty"`
 }
 
-// ChannelInfo represents channel information
+// ChannelInfo represents channel information with enriched fields
 type ChannelInfo struct {
 	ChannelID   int64  `json:"channel_id" toon:"channel_id"`
 	ChannelName string `json:"channel_name" toon:"channel_name"`
 	TeamID      int64  `json:"team_id,omitempty" toon:"team_id,omitempty"`
 	TeamName    string `json:"team_name,omitempty" toon:"team_name,omitempty"`
+	CreatorID   int64  `json:"creator_id,omitempty" toon:"creator_id,omitempty"`
+	CreatorName string `json:"creator_name,omitempty" toon:"creator_name,omitempty"`
 }
 
 // TeamInfo represents team information

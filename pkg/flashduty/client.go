@@ -6,10 +6,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	mcplog "github.com/flashcatcloud/flashduty-mcp-server/pkg/log"
+	"github.com/flashcatcloud/flashduty-mcp-server/pkg/trace"
+)
+
+const (
+	// maxResponseBodySize limits the response body size to prevent OOM attacks (10MB)
+	maxResponseBodySize = 10 * 1024 * 1024
 )
 
 // Client represents a Flashduty API client
@@ -56,13 +65,15 @@ func (c *Client) SetUserAgent(userAgent string) {
 // makeRequest makes an HTTP request to the Flashduty API
 func (c *Client) makeRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
 	var reqBody io.Reader
+	var reqBodyBytes []byte
 
 	if body != nil {
-		jsonBody, err := json.Marshal(body)
+		var err error
+		reqBodyBytes, err = json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+			return nil, fmt.Errorf("invalid request body: unable to serialize to JSON: %w", err)
 		}
-		reqBody = bytes.NewBuffer(jsonBody)
+		reqBody = bytes.NewBuffer(reqBodyBytes)
 	}
 
 	// Parse path to handle query parameters correctly
@@ -77,6 +88,17 @@ func (c *Client) makeRequest(ctx context.Context, method, path string, body inte
 	query.Set("app_key", c.appKey)
 	fullURL.RawQuery = query.Encode()
 
+	// Extract trace context for logging and propagation
+	traceCtx := trace.FromContext(ctx)
+
+	// Log request with trace_id first (after msg in output)
+	logAttrs := []any{}
+	if traceCtx != nil {
+		logAttrs = append(logAttrs, "trace_id", traceCtx.TraceID)
+	}
+	logAttrs = append(logAttrs, "method", method, "url", sanitizeURL(fullURL), "body", mcplog.TruncateBodyDefault(string(reqBodyBytes)))
+	slog.Info("duty request", logAttrs...)
+
 	req, err := http.NewRequestWithContext(ctx, method, fullURL.String(), reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -89,6 +111,11 @@ func (c *Client) makeRequest(ctx context.Context, method, path string, body inte
 	req.Header.Set("Accept", "application/json")
 	if c.userAgent != "" {
 		req.Header.Set("User-Agent", c.userAgent)
+	}
+
+	// Propagate trace context to downstream service
+	if traceCtx != nil {
+		traceCtx.SetHTTPHeaders(req.Header)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -106,43 +133,58 @@ func sanitizeURL(u *url.URL) string {
 	q := sanitized.Query()
 	if q.Has("app_key") {
 		q.Set("app_key", "[REDACTED]")
+		sanitized.RawQuery = q.Encode()
 	}
-	sanitized.RawQuery = q.Encode()
 	return sanitized.String()
 }
 
 // sanitizeError removes potential URL with sensitive data from error messages
 func sanitizeError(err error) string {
 	errStr := err.Error()
-	// Remove any app_key=xxx patterns from error messages
-	if idx := strings.Index(errStr, "app_key="); idx != -1 {
-		// Find the end of the app_key value (next & or end of string)
-		endIdx := strings.IndexAny(errStr[idx:], "& ")
-		if endIdx == -1 {
-			errStr = errStr[:idx] + "app_key=[REDACTED]"
-		} else {
-			errStr = errStr[:idx] + "app_key=[REDACTED]" + errStr[idx+endIdx:]
-		}
+	idx := strings.Index(errStr, "app_key=")
+	if idx == -1 {
+		return errStr
 	}
-	return errStr
+
+	endIdx := strings.IndexAny(errStr[idx:], "& ")
+	if endIdx == -1 {
+		return errStr[:idx] + "app_key=[REDACTED]"
+	}
+	return errStr[:idx] + "app_key=[REDACTED]" + errStr[idx+endIdx:]
 }
 
 // parseResponse parses the HTTP response into the given interface.
 // Note: caller is responsible for closing resp.Body.
 func parseResponse(resp *http.Response, v interface{}) error {
-	// Limit reading to 4KB to prevent potential OOM
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	// Build log attributes with trace context
+	logAttrs := []any{}
+	if traceCtx := trace.FromContext(resp.Request.Context()); traceCtx != nil {
+		logAttrs = append(logAttrs, "trace_id", traceCtx.TraceID)
 	}
+	logAttrs = append(logAttrs, "status", resp.StatusCode, "body", mcplog.TruncateBodyDefault(string(body)))
+
+	requestID := resp.Header.Get("Flashcat-Request-Id")
+
+	if resp.StatusCode >= 500 {
+		slog.Error("duty response", logAttrs...)
+		return fmt.Errorf("API server error (HTTP %d, request_id: %s): %s", resp.StatusCode, requestID, string(body))
+	}
+
+	if resp.StatusCode >= 400 {
+		slog.Warn("duty response", logAttrs...)
+		return fmt.Errorf("API client error (HTTP %d, request_id: %s): %s", resp.StatusCode, requestID, string(body))
+	}
+
+	slog.Info("duty response", logAttrs...)
 
 	if v != nil {
 		if err := json.Unmarshal(body, v); err != nil {
-			return fmt.Errorf("failed to unmarshal response: %w", err)
+			return fmt.Errorf("invalid API response: failed to parse JSON (response size: %d bytes, request_id: %s): %w", len(body), requestID, err)
 		}
 	}
 
@@ -153,14 +195,27 @@ func parseResponse(resp *http.Response, v interface{}) error {
 // This function should be called when resp.StatusCode != http.StatusOK.
 // It returns the full response body which contains request_id for debugging.
 func handleAPIError(resp *http.Response) error {
-	// Limit reading to 4KB to prevent potential OOM with unexpected large response bodies
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
 	if err != nil {
-		return fmt.Errorf("API request failed with HTTP status %d (failed to read response: %v)", resp.StatusCode, err)
+		return fmt.Errorf("API request failed (HTTP %d): unable to read response body: %v", resp.StatusCode, err)
 	}
 
-	// Return full response body for better debugging (contains request_id, error code, message)
-	return fmt.Errorf("API request failed with HTTP status %d: %s", resp.StatusCode, string(body))
+	// Build log attributes with trace context
+	logAttrs := []any{}
+	if traceCtx := trace.FromContext(resp.Request.Context()); traceCtx != nil {
+		logAttrs = append(logAttrs, "trace_id", traceCtx.TraceID)
+	}
+	logAttrs = append(logAttrs, "status", resp.StatusCode, "body", mcplog.TruncateBodyDefault(string(body)))
+
+	requestID := resp.Header.Get("Flashcat-Request-Id")
+
+	if resp.StatusCode >= 500 {
+		slog.Error("duty error", logAttrs...)
+		return fmt.Errorf("API server error (HTTP %d, request_id: %s): %s", resp.StatusCode, requestID, string(body))
+	}
+
+	slog.Warn("duty error", logAttrs...)
+	return fmt.Errorf("API client error (HTTP %d, request_id: %s): %s", resp.StatusCode, requestID, string(body))
 }
 
 // FlashdutyResponse represents the standard Flashduty API response structure

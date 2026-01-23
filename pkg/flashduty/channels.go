@@ -63,9 +63,15 @@ func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHel
 					channels = append(channels, ch)
 				}
 
+				// Enrich channels with team and creator names
+				enrichedChannels, err := client.enrichChannels(ctx, channels)
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("Failed to fetch team and creator details for channels: %v", err)), nil
+				}
+
 				return MarshalResult(map[string]any{
-					"channels": channels,
-					"total":    len(channels),
+					"channels": enrichedChannels,
+					"total":    len(enrichedChannels),
 				}), nil
 			}
 
@@ -87,6 +93,7 @@ func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHel
 						ChannelID   int64  `json:"channel_id"`
 						ChannelName string `json:"channel_name"`
 						TeamID      int64  `json:"team_id,omitempty"`
+						CreatorID   int64  `json:"creator_id,omitempty"`
 					} `json:"items"`
 				} `json:"data,omitempty"`
 			}
@@ -108,13 +115,20 @@ func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHel
 						ChannelID:   ch.ChannelID,
 						ChannelName: ch.ChannelName,
 						TeamID:      ch.TeamID,
+						CreatorID:   ch.CreatorID,
 					})
 				}
 			}
 
+			// Enrich channels with team and creator names
+			enrichedChannels, err := client.enrichChannels(ctx, channels)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Failed to fetch team and creator details for channels: %v", err)), nil
+			}
+
 			return MarshalResult(map[string]any{
-				"channels": channels,
-				"total":    len(channels),
+				"channels": enrichedChannels,
+				"total":    len(enrichedChannels),
 			}), nil
 		}
 }

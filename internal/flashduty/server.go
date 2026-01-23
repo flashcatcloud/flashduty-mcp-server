@@ -2,10 +2,11 @@ package flashduty
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,13 +16,26 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/sirupsen/logrus"
 
 	pkgerrors "github.com/flashcatcloud/flashduty-mcp-server/pkg/errors"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 	mcplog "github.com/flashcatcloud/flashduty-mcp-server/pkg/log"
+	"github.com/flashcatcloud/flashduty-mcp-server/pkg/trace"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
+
+// slogAdapter adapts slog.Logger to mcp-go's util.Logger interface
+type slogAdapter struct {
+	logger *slog.Logger
+}
+
+func (a *slogAdapter) Infof(format string, v ...any) {
+	a.logger.Info(fmt.Sprintf(format, v...))
+}
+
+func (a *slogAdapter) Errorf(format string, v ...any) {
+	a.logger.Error(fmt.Sprintf(format, v...))
+}
 
 type FlashdutyConfig struct {
 	// Version of the server
@@ -53,7 +67,7 @@ func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 			// during the initial 'initialize' call if the server doesn't provide it.
 			// We can log a warning and proceed. The client will be created on-demand
 			// during actual tool calls.
-			logrus.Warnf("Could not get client during initialization, maybe APP key is not yet available: %v", err)
+			slog.Warn("Could not get client during initialization, maybe APP key is not yet available", "error", err)
 			return
 		}
 
@@ -70,13 +84,44 @@ func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 		cfg.EnabledToolsets = []string{"all"}
 	}
 
+	toJSONString := func(v any) string {
+		data, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprintf("%v", v)
+		}
+		return string(data)
+	}
+
+	buildLogAttrs := func(ctx context.Context, id any, method mcp.MCPMethod, extraAttrs ...any) []any {
+		attrs := []any{}
+		if tc := trace.FromContext(ctx); tc != nil {
+			attrs = append(attrs, "trace_id", tc.TraceID)
+		}
+		attrs = append(attrs, "id", id, "method", method)
+		return append(attrs, extraAttrs...)
+	}
+
 	hooks := &server.Hooks{
 		OnBeforeInitialize: []server.OnBeforeInitializeFunc{beforeInit},
 		OnBeforeAny: []server.BeforeAnyHookFunc{
 			func(ctx context.Context, _ any, _ mcp.MCPMethod, _ any) {
-				// Ensure the context is cleared of any previous errors
-				// as context isn't propagated through middleware
 				pkgerrors.ContextWithFlashdutyErrors(ctx)
+			},
+			func(ctx context.Context, id any, method mcp.MCPMethod, message any) {
+				attrs := buildLogAttrs(ctx, id, method, "params", mcplog.TruncateBodyDefault(toJSONString(message)))
+				slog.Info("mcp request", attrs...)
+			},
+		},
+		OnSuccess: []server.OnSuccessHookFunc{
+			func(ctx context.Context, id any, method mcp.MCPMethod, message any, result any) {
+				attrs := buildLogAttrs(ctx, id, method, "result", mcplog.TruncateBodyDefault(toJSONString(result)))
+				slog.Info("mcp response", attrs...)
+			},
+		},
+		OnError: []server.OnErrorHookFunc{
+			func(ctx context.Context, id any, method mcp.MCPMethod, message any, err error) {
+				attrs := buildLogAttrs(ctx, id, method, "error", err)
+				slog.Error("mcp error", attrs...)
 			},
 		},
 	}
@@ -159,18 +204,18 @@ func RunStdioServer(cfg StdioServerConfig) error {
 
 	stdioServer := server.NewStdioServer(flashdutyServer)
 
-	logrusLogger := logrus.New()
+	// Setup slog logger
+	var slogHandler slog.Handler
 	if cfg.LogFilePath != "" {
 		file, err := os.OpenFile(cfg.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return fmt.Errorf("failed to open log file: %w", err)
 		}
-
-		logrusLogger.SetLevel(logrus.DebugLevel)
-		logrusLogger.SetOutput(file)
+		slogHandler = slog.NewTextHandler(file, &slog.HandlerOptions{Level: slog.LevelDebug})
+	} else {
+		slogHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
 	}
-	stdLogger := log.New(logrusLogger.Writer(), "stdioserver", 0)
-	stdioServer.SetErrorLogger(stdLogger)
+	logger := slog.New(slogHandler)
 
 	// Start listening for messages
 	errC := make(chan error, 1)
@@ -178,7 +223,7 @@ func RunStdioServer(cfg StdioServerConfig) error {
 		in, out := io.Reader(os.Stdin), io.Writer(os.Stdout)
 
 		if cfg.EnableCommandLogging {
-			loggedIO := mcplog.NewIOLogger(in, out, logrusLogger)
+			loggedIO := mcplog.NewIOLogger(in, out, logger)
 			in, out = loggedIO, loggedIO
 		}
 		// enable Flashduty errors in the context
@@ -192,7 +237,7 @@ func RunStdioServer(cfg StdioServerConfig) error {
 	// Wait for shutdown signal
 	select {
 	case <-ctx.Done():
-		logrusLogger.Infof("shutting down server...")
+		logger.Info("shutting down server...")
 	case err := <-errC:
 		if err != nil {
 			return fmt.Errorf("error running server: %w", err)
@@ -220,65 +265,125 @@ type HTTPServerConfig struct {
 	LogFilePath string
 }
 
-// httpContextFunc extracts configuration from the HTTP request and injects it into the context.
-func httpContextFunc(ctx context.Context, r *http.Request, defaultBaseURL string) context.Context {
-	// Extract app_key from Authorization header
-	authHeader := r.Header.Get("Authorization")
-	var appKey string
-	if authHeader != "" {
+// maskSensitiveValue masks a sensitive value, showing only prefix and suffix.
+func maskSensitiveValue(value string) string {
+	if len(value) <= 8 {
+		return "***"
+	}
+	return value[:4] + "***" + value[len(value)-4:]
+}
+
+// maskURLAppKey masks the app_key parameter in a URL string.
+func maskURLAppKey(urlStr string) string {
+	idx := strings.Index(urlStr, "app_key=")
+	if idx == -1 {
+		return urlStr
+	}
+
+	prefix := urlStr[:idx+8] // include "app_key="
+	remaining := urlStr[idx+8:]
+
+	// Find the end of app_key value (next & or end of string)
+	endIdx := strings.Index(remaining, "&")
+	var appKeyValue, rest string
+	if endIdx == -1 {
+		appKeyValue = remaining
+		rest = ""
+	} else {
+		appKeyValue = remaining[:endIdx]
+		rest = remaining[endIdx:]
+	}
+
+	return prefix + maskSensitiveValue(appKeyValue) + rest
+}
+
+// maskHeaders masks sensitive headers like Authorization.
+func maskHeaders(headers http.Header) map[string][]string {
+	masked := make(map[string][]string, len(headers))
+	for k, v := range headers {
+		if strings.ToLower(k) == "authorization" {
+			masked[k] = maskAuthValues(v)
+		} else {
+			masked[k] = v
+		}
+	}
+	return masked
+}
+
+// maskAuthValues masks authorization header values
+func maskAuthValues(values []string) []string {
+	masked := make([]string, len(values))
+	for i, val := range values {
+		tokenParts := strings.SplitN(val, " ", 2)
+		if len(tokenParts) == 2 {
+			masked[i] = tokenParts[0] + " " + maskSensitiveValue(tokenParts[1])
+		} else {
+			masked[i] = maskSensitiveValue(val)
+		}
+	}
+	return masked
+}
+
+// buildHTTPLogAttrs builds log attributes for HTTP requests
+func buildHTTPLogAttrs(traceCtx *trace.TraceContext, r *http.Request) []any {
+	attrs := []any{}
+	if traceCtx != nil {
+		attrs = append(attrs, "trace_id", traceCtx.TraceID, "span_id", traceCtx.SpanID)
+	}
+	return append(attrs, "url", maskURLAppKey(r.URL.String()), "headers", maskHeaders(r.Header))
+}
+
+// extractAppKey extracts app_key from Authorization header or query parameters
+func extractAppKey(r *http.Request) string {
+	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		tokenParts := strings.Split(authHeader, " ")
 		if len(tokenParts) == 2 && strings.ToLower(tokenParts[0]) == "bearer" {
-			appKey = tokenParts[1]
+			return tokenParts[1]
 		}
 	}
+	return r.URL.Query().Get("app_key")
+}
 
-	// Extract other parameters from query
+// httpContextFunc extracts configuration from the HTTP request and injects it into the context.
+func httpContextFunc(ctx context.Context, r *http.Request, defaultBaseURL string) context.Context {
 	queryParams := r.URL.Query()
-
-	// If appKey is still empty, try to get it from query params as a fallback.
-	if appKey == "" {
-		if keyFromQuery := queryParams.Get("app_key"); keyFromQuery != "" {
-			appKey = keyFromQuery
-		}
-	}
-
-	toolsets := queryParams.Get("toolsets")
+	
 	var enabledToolsets []string
-	if toolsets != "" {
+	if toolsets := queryParams.Get("toolsets"); toolsets != "" {
 		enabledToolsets = strings.Split(toolsets, ",")
 	}
-	readOnly := queryParams.Get("read_only") == "true"
+
 	baseURL := queryParams.Get("base_url")
 	if baseURL == "" {
 		baseURL = defaultBaseURL
 	}
 
-	// Create session config and put it in context
 	cfg := FlashdutyConfig{
 		BaseURL:         baseURL,
-		APPKey:          appKey,
+		APPKey:          extractAppKey(r),
 		EnabledToolsets: enabledToolsets,
-		ReadOnly:        readOnly,
+		ReadOnly:        queryParams.Get("read_only") == "true",
 	}
 
 	return ContextWithConfig(ctx, cfg)
 }
 
 func RunHTTPServer(cfg HTTPServerConfig) error {
-	// Setup logging
-	logrusLogger := logrus.New()
+	// Setup slog logger
+	var slogHandler slog.Handler
 	if cfg.LogFilePath != "" {
 		// #nosec G304
 		file, err := os.OpenFile(cfg.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return fmt.Errorf("failed to open log file: %w", err)
 		}
-		logrusLogger.SetOutput(file)
-		logrusLogger.SetLevel(logrus.DebugLevel)
+		slogHandler = slog.NewTextHandler(file, &slog.HandlerOptions{Level: slog.LevelDebug})
 	} else {
-		logrusLogger.SetOutput(os.Stderr)
-		logrusLogger.SetLevel(logrus.InfoLevel)
+		slogHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
 	}
+	logger := slog.New(slogHandler)
+	// Set as default logger for global slog calls
+	slog.SetDefault(logger)
 
 	// Create translation helper
 	t, _ := translations.TranslationHelper()
@@ -291,16 +396,26 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 		EnabledToolsets: []string{"all"},
 	})
 	if err != nil {
-		logrusLogger.Fatalf("failed to create MCP server: %v", err)
+		logger.Error("failed to create MCP server", "error", err)
+		os.Exit(1)
 	}
 
 	httpServer := server.NewStreamableHTTPServer(
 		mcpServer,
-		server.WithLogger(logrusLogger),
+		server.WithLogger(&slogAdapter{logger: logger}),
 		server.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
-			logrusLogger.Infof("Handling request for %s. Headers: %v", r.URL, r.Header)
-			authHeader := r.Header.Get("Authorization")
-			logrusLogger.Infof("Authorization header received: %q", authHeader)
+			// Extract W3C Trace Context from HTTP headers, or generate a new one
+			traceCtx, err := trace.FromHTTPHeadersOrNew(r.Header)
+			if err != nil {
+				logger.Warn("Failed to generate trace context, continuing without trace", "error", err)
+				// Continue without trace context if generation fails
+			} else {
+				ctx = trace.ContextWithTraceContext(ctx, traceCtx)
+			}
+
+			logAttrs := buildHTTPLogAttrs(traceCtx, r)
+			logger.Info("new request", logAttrs...)
+
 			return httpContextFunc(ctx, r, cfg.BaseURL)
 		}),
 	)
@@ -320,9 +435,15 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 	}
 
 	go func() {
-		logrusLogger.Infof("Server listening on http://0.0.0.0:%s, version: %s, commit: %s, date: %s", cfg.Port, cfg.Version, cfg.Commit, cfg.Date)
+		logger.Info("Server listening",
+			"addr", "http://0.0.0.0:"+cfg.Port,
+			"version", cfg.Version,
+			"commit", cfg.Commit,
+			"date", cfg.Date,
+		)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logrusLogger.Fatalf("listen: %s\n", err)
+			logger.Error("listen failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -332,15 +453,16 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 
 	<-ctx.Done()
 
-	logrusLogger.Info("Shutting down server...")
+	logger.Info("Shutting down server...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logrusLogger.Fatalf("Server shutdown failed: %+v", err)
+		logger.Error("Server shutdown failed", "error", err)
+		os.Exit(1)
 	}
 
-	logrusLogger.Info("Server exited properly")
+	logger.Info("Server exited properly")
 	return nil
 }
