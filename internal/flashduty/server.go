@@ -347,7 +347,7 @@ func extractAppKey(r *http.Request) string {
 // httpContextFunc extracts configuration from the HTTP request and injects it into the context.
 func httpContextFunc(ctx context.Context, r *http.Request, defaultBaseURL string) context.Context {
 	queryParams := r.URL.Query()
-	
+
 	var enabledToolsets []string
 	if toolsets := queryParams.Get("toolsets"); toolsets != "" {
 		enabledToolsets = strings.Split(toolsets, ",")
@@ -396,8 +396,7 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 		EnabledToolsets: []string{"all"},
 	})
 	if err != nil {
-		logger.Error("failed to create MCP server", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create MCP server: %w", err)
 	}
 
 	httpServer := server.NewStreamableHTTPServer(
@@ -434,6 +433,7 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 		MaxHeaderBytes:    128 * 1024,       // 128KB
 	}
 
+	errC := make(chan error, 1)
 	go func() {
 		logger.Info("Server listening",
 			"addr", "http://0.0.0.0:"+cfg.Port,
@@ -442,8 +442,7 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 			"date", cfg.Date,
 		)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("listen failed", "error", err)
-			os.Exit(1)
+			errC <- err
 		}
 	}()
 
@@ -451,16 +450,19 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	<-ctx.Done()
-
-	logger.Info("Shutting down server...")
+	// Wait for shutdown signal or server error
+	select {
+	case <-ctx.Done():
+		logger.Info("Shutting down server...")
+	case err := <-errC:
+		return fmt.Errorf("listen failed: %w", err)
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("Server shutdown failed", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("server shutdown failed: %w", err)
 	}
 
 	logger.Info("Server exited properly")
