@@ -177,6 +177,7 @@ This is the most common method for local configuration, especially in a Docker e
 | `FLASHDUTY_BASE_URL` | Flashduty API base URL | ❌ | `https://api.flashcat.cloud` |
 | `FLASHDUTY_LOG_FILE` | Log file path | ❌ | stderr |
 | `FLASHDUTY_ENABLE_COMMAND_LOGGING` | Enable command logging | ❌ | `false` |
+| `TZ` | Timezone for log timestamps (e.g., `Asia/Shanghai`, `America/New_York`) | ❌ | System default (falls back to `Asia/Shanghai` in containers without timezone data) |
 
 **Docker Example:**
 
@@ -185,8 +186,11 @@ docker run -i --rm \
   -e FLASHDUTY_APP_KEY=<your-app-key> \
   -e FLASHDUTY_TOOLSETS="incidents,users,channels" \
   -e FLASHDUTY_READ_ONLY=1 \
+  -e TZ=Asia/Shanghai \
   registry.flashcat.cloud/public/flashduty-mcp-server
 ```
+
+> **Note:** The `TZ` environment variable controls the timezone used for log timestamps. If not set, the server will use the system default timezone, or fall back to `Asia/Shanghai` in containers without timezone data (e.g., distroless images). Common timezone values include `Asia/Shanghai`, `America/New_York`, `Europe/London`, `UTC`, etc.
 
 #### 2. Via Command-Line Arguments
 

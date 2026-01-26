@@ -17,11 +17,12 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	pkgerrors "github.com/flashcatcloud/flashduty-mcp-server/pkg/errors"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
-	mcplog "github.com/flashcatcloud/flashduty-mcp-server/pkg/log"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/trace"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
+
+	pkgerrors "github.com/flashcatcloud/flashduty-mcp-server/pkg/errors"
+	mcplog "github.com/flashcatcloud/flashduty-mcp-server/pkg/log"
 )
 
 // slogAdapter adapts slog.Logger to mcp-go's util.Logger interface
@@ -211,9 +212,9 @@ func RunStdioServer(cfg StdioServerConfig) error {
 		if err != nil {
 			return fmt.Errorf("failed to open log file: %w", err)
 		}
-		slogHandler = slog.NewTextHandler(file, &slog.HandlerOptions{Level: slog.LevelDebug})
+		slogHandler = newOrderedTextHandler(file, slog.LevelDebug)
 	} else {
-		slogHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
+		slogHandler = newOrderedTextHandler(os.Stderr, slog.LevelInfo)
 	}
 	logger := slog.New(slogHandler)
 
@@ -261,76 +262,11 @@ type HTTPServerConfig struct {
 	// Port to listen on
 	Port string
 
+	// OutputFormat specifies the format for tool results (json or toon)
+	OutputFormat string
+
 	// Path to the log file if not stderr
 	LogFilePath string
-}
-
-// maskSensitiveValue masks a sensitive value, showing only prefix and suffix.
-func maskSensitiveValue(value string) string {
-	if len(value) <= 8 {
-		return "***"
-	}
-	return value[:4] + "***" + value[len(value)-4:]
-}
-
-// maskURLAppKey masks the app_key parameter in a URL string.
-func maskURLAppKey(urlStr string) string {
-	idx := strings.Index(urlStr, "app_key=")
-	if idx == -1 {
-		return urlStr
-	}
-
-	prefix := urlStr[:idx+8] // include "app_key="
-	remaining := urlStr[idx+8:]
-
-	// Find the end of app_key value (next & or end of string)
-	endIdx := strings.Index(remaining, "&")
-	var appKeyValue, rest string
-	if endIdx == -1 {
-		appKeyValue = remaining
-		rest = ""
-	} else {
-		appKeyValue = remaining[:endIdx]
-		rest = remaining[endIdx:]
-	}
-
-	return prefix + maskSensitiveValue(appKeyValue) + rest
-}
-
-// maskHeaders masks sensitive headers like Authorization.
-func maskHeaders(headers http.Header) map[string][]string {
-	masked := make(map[string][]string, len(headers))
-	for k, v := range headers {
-		if strings.ToLower(k) == "authorization" {
-			masked[k] = maskAuthValues(v)
-		} else {
-			masked[k] = v
-		}
-	}
-	return masked
-}
-
-// maskAuthValues masks authorization header values
-func maskAuthValues(values []string) []string {
-	masked := make([]string, len(values))
-	for i, val := range values {
-		tokenParts := strings.SplitN(val, " ", 2)
-		if len(tokenParts) == 2 {
-			masked[i] = tokenParts[0] + " " + maskSensitiveValue(tokenParts[1])
-		} else {
-			masked[i] = maskSensitiveValue(val)
-		}
-	}
-	return masked
-}
-
-// buildHTTPLogAttrs builds log attributes for HTTP requests
-func buildHTTPLogAttrs(traceCtx *trace.TraceContext, r *http.Request) []any {
-	attrs := []any{}
-	if traceCtx != nil {
-		attrs = append(attrs, "trace_id", traceCtx.TraceID, "span_id", traceCtx.SpanID)
-	}
-	return append(attrs, "url", maskURLAppKey(r.URL.String()), "headers", maskHeaders(r.Header))
 }
 
 // extractAppKey extracts app_key from Authorization header or query parameters
@@ -369,6 +305,9 @@ func httpContextFunc(ctx context.Context, r *http.Request, defaultBaseURL string
 }
 
 func RunHTTPServer(cfg HTTPServerConfig) error {
+	// Set the global output format
+	flashduty.SetOutputFormat(flashduty.ParseOutputFormat(cfg.OutputFormat))
+
 	// Setup slog logger
 	var slogHandler slog.Handler
 	if cfg.LogFilePath != "" {
@@ -377,9 +316,9 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 		if err != nil {
 			return fmt.Errorf("failed to open log file: %w", err)
 		}
-		slogHandler = slog.NewTextHandler(file, &slog.HandlerOptions{Level: slog.LevelDebug})
+		slogHandler = newOrderedTextHandler(file, slog.LevelDebug)
 	} else {
-		slogHandler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
+		slogHandler = newOrderedTextHandler(os.Stderr, slog.LevelInfo)
 	}
 	logger := slog.New(slogHandler)
 	// Set as default logger for global slog calls
@@ -412,8 +351,8 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 				ctx = trace.ContextWithTraceContext(ctx, traceCtx)
 			}
 
-			logAttrs := buildHTTPLogAttrs(traceCtx, r)
-			logger.Info("new request", logAttrs...)
+			// Note: HTTP request logging is handled by MCP hooks (OnBeforeAny, OnSuccess, OnError)
+			// which provide more detailed information including method, params, and results.
 
 			return httpContextFunc(ctx, r, cfg.BaseURL)
 		}),

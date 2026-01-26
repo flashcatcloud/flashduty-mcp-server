@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/flashcatcloud/flashduty-mcp-server/internal/flashduty"
+
 	flashdutyPkg "github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 )
 
@@ -76,12 +77,13 @@ var (
 		Long:  `Start a streamable HTTP server.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			httpServerConfig := flashduty.HTTPServerConfig{
-				Version:     version,
-				Commit:      commit,
-				Date:        date,
-				BaseURL:     viper.GetString("base_url"),
-				Port:        viper.GetString("port"),
-				LogFilePath: viper.GetString("log-file"),
+				Version:      version,
+				Commit:       commit,
+				Date:         date,
+				BaseURL:      viper.GetString("base_url"),
+				Port:         viper.GetString("port"),
+				OutputFormat: viper.GetString("output-format"),
+				LogFilePath:  viper.GetString("log-file"),
 			}
 			return flashduty.RunHTTPServer(httpServerConfig)
 		},
