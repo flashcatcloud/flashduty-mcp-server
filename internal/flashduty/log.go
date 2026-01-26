@@ -205,11 +205,8 @@ func fmtAny(v any) string {
 
 // appendInt appends an int64 to the buffer.
 func appendInt(buf []byte, x int64) []byte {
-	if x < 0 {
-		buf = append(buf, '-')
-		x = -x
-	}
-	return appendUint(buf, uint64(x))
+	// Use strconv.AppendInt to avoid integer overflow issues
+	return strconv.AppendInt(buf, x, 10)
 }
 
 // appendUint appends a uint64 to the buffer.
