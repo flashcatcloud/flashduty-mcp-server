@@ -31,6 +31,10 @@ ENV FLASHDUTY_READ_ONLY=""
 ENV FLASHDUTY_TOOLSETS=""
 ENV FLASHDUTY_LOG_FILE=""
 ENV FLASHDUTY_ENABLE_COMMAND_LOGGING=""
+# Set timezone environment variable (can be overridden at runtime)
+# Note: distroless images don't include timezone data, so TZ must be set via environment variable
+# Example: docker run -e TZ=Asia/Shanghai ...
+ENV TZ=""
 
 # Set the entrypoint to the server binary
 ENTRYPOINT ["/server/flashduty-mcp-server"]

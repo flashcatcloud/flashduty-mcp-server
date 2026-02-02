@@ -160,6 +160,7 @@ Flashduty MCP Server 支持以下配置：
 | `FLASHDUTY_BASE_URL` | API 地址 | ❌ | `https://api.flashcat.cloud` |
 | `FLASHDUTY_LOG_FILE` | 日志文件路径 | ❌ | stderr |
 | `FLASHDUTY_ENABLE_COMMAND_LOGGING` | 记录请求日志 | ❌ | `false` |
+| `TZ` | 日志时间戳时区（如 `Asia/Shanghai`、`America/New_York`） | ❌ | 系统默认（无时区数据的容器中回退到 `Asia/Shanghai`） |
 
 **Docker 示例：**
 
@@ -168,8 +169,11 @@ docker run -i --rm \
   -e FLASHDUTY_APP_KEY=<your-app-key> \
   -e FLASHDUTY_TOOLSETS="incidents,users,channels" \
   -e FLASHDUTY_READ_ONLY=1 \
+  -e TZ=Asia/Shanghai \
   registry.flashcat.cloud/public/flashduty-mcp-server
 ```
+
+> **提示：** `TZ` 环境变量用于控制日志时间戳的时区。如果未设置，服务将使用系统默认时区，或在没有时区数据的容器（如 distroless 镜像）中回退到 `Asia/Shanghai`。常用时区值包括 `Asia/Shanghai`、`America/New_York`、`Europe/London`、`UTC` 等。
 
 #### 2. 命令行参数
 
