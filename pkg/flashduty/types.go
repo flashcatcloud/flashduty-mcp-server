@@ -114,30 +114,106 @@ type FieldInfo struct {
 	DefaultValue any      `json:"default_value,omitempty" toon:"default_value,omitempty"`
 }
 
-// EscalationRule represents an escalation rule
+// EscalationRule represents an escalation rule with full details
 type EscalationRule struct {
 	RuleID      string            `json:"rule_id" toon:"rule_id"`
 	RuleName    string            `json:"rule_name" toon:"rule_name"`
 	Description string            `json:"description,omitempty" toon:"description,omitempty"`
 	ChannelID   int64             `json:"channel_id" toon:"channel_id"`
+	ChannelName string            `json:"channel_name,omitempty" toon:"channel_name,omitempty"`
 	Status      string            `json:"status,omitempty" toon:"status,omitempty"`
+	Priority    int               `json:"priority" toon:"priority"`
+	AggrWindow  int               `json:"aggr_window" toon:"aggr_window"`
 	Layers      []EscalationLayer `json:"layers,omitempty" toon:"layers,omitempty"`
+	TimeFilters []TimeFilter      `json:"time_filters,omitempty" toon:"time_filters,omitempty"`
+	Filters     AlertFilters      `json:"filters,omitempty" toon:"filters,omitempty"`
 }
 
 // EscalationLayer represents a layer in an escalation rule
 type EscalationLayer struct {
-	LayerIdx       int                `json:"layer_idx" toon:"layer_idx"`
-	Timeout        int                `json:"timeout" toon:"timeout"`
-	NotifyInterval int                `json:"notify_interval,omitempty" toon:"notify_interval,omitempty"`
-	MaxTimes       int                `json:"max_times,omitempty" toon:"max_times,omitempty"`
-	Targets        []EscalationTarget `json:"targets,omitempty" toon:"targets,omitempty"`
+	LayerIdx       int               `json:"layer_idx" toon:"layer_idx"`
+	Timeout        int               `json:"timeout" toon:"timeout"`
+	NotifyInterval float64           `json:"notify_interval,omitempty" toon:"notify_interval,omitempty"`
+	MaxTimes       int               `json:"max_times,omitempty" toon:"max_times,omitempty"`
+	ForceEscalate  bool              `json:"force_escalate,omitempty" toon:"force_escalate,omitempty"`
+	Target         *EscalationTarget `json:"target,omitempty" toon:"target,omitempty"`
 }
 
-// EscalationTarget represents an escalation target
+// EscalationTarget represents the complete target configuration for a layer
 type EscalationTarget struct {
-	Type string `json:"type" toon:"type"`
-	ID   int64  `json:"id" toon:"id"`
-	Name string `json:"name,omitempty" toon:"name,omitempty"`
+	Persons   []PersonTarget   `json:"persons,omitempty" toon:"persons,omitempty"`
+	Teams     []TeamTarget     `json:"teams,omitempty" toon:"teams,omitempty"`
+	Schedules []ScheduleTarget `json:"schedules,omitempty" toon:"schedules,omitempty"`
+	NotifyBy  *NotifyBy        `json:"notify_by,omitempty" toon:"notify_by,omitempty"`
+	Webhooks  []WebhookConfig  `json:"webhooks,omitempty" toon:"webhooks,omitempty"`
+}
+
+// PersonTarget represents a person in escalation target
+type PersonTarget struct {
+	PersonID   int64  `json:"person_id" toon:"person_id"`
+	PersonName string `json:"person_name,omitempty" toon:"person_name,omitempty"`
+	Email      string `json:"email,omitempty" toon:"email,omitempty"`
+}
+
+// TeamTarget represents a team in escalation target with members
+type TeamTarget struct {
+	TeamID   int64          `json:"team_id" toon:"team_id"`
+	TeamName string         `json:"team_name,omitempty" toon:"team_name,omitempty"`
+	Members  []PersonTarget `json:"members,omitempty" toon:"members,omitempty"`
+}
+
+// ScheduleTarget represents a schedule in escalation target
+type ScheduleTarget struct {
+	ScheduleID   int64   `json:"schedule_id" toon:"schedule_id"`
+	ScheduleName string  `json:"schedule_name,omitempty" toon:"schedule_name,omitempty"`
+	RoleIDs      []int64 `json:"role_ids,omitempty" toon:"role_ids,omitempty"`
+}
+
+// NotifyBy represents direct message notification configuration
+// When follow_preference is true, notifications follow each person's preference settings
+// When follow_preference is false, use severity-specific methods (critical/warning/info)
+type NotifyBy struct {
+	FollowPreference bool     `json:"follow_preference" toon:"follow_preference"`
+	Critical         []string `json:"critical,omitempty" toon:"critical,omitempty"`
+	Warning          []string `json:"warning,omitempty" toon:"warning,omitempty"`
+	Info             []string `json:"info,omitempty" toon:"info,omitempty"`
+}
+
+// WebhookConfig represents a webhook configuration in escalation target
+type WebhookConfig struct {
+	Type     string         `json:"type" toon:"type"`
+	Alias    string         `json:"alias,omitempty" toon:"alias,omitempty"`
+	Settings map[string]any `json:"settings,omitempty" toon:"settings,omitempty"`
+}
+
+// TimeFilter represents time-based filter for rule activation
+type TimeFilter struct {
+	Start  string `json:"start" toon:"start"`
+	End    string `json:"end" toon:"end"`
+	Repeat []int  `json:"repeat,omitempty" toon:"repeat,omitempty"`
+	CalID  string `json:"cal_id,omitempty" toon:"cal_id,omitempty"`
+	IsOff  bool   `json:"is_off,omitempty" toon:"is_off,omitempty"`
+}
+
+// AlertFilters represents alert filter conditions as OR groups of AND conditions
+// Structure: [[{key,oper,vals}, ...], ...] where outer array is OR, inner array is AND
+type AlertFilters []AlertFilterGroup
+
+// AlertFilterGroup represents AND conditions within an OR group
+type AlertFilterGroup []AlertCondition
+
+// AlertCondition represents a single filter condition
+// Oper can be "IN" (match) or "NOTIN" (not match)
+type AlertCondition struct {
+	Key  string   `json:"key" toon:"key"`
+	Oper string   `json:"oper" toon:"oper"`
+	Vals []string `json:"vals" toon:"vals"`
+}
+
+// ScheduleInfo represents schedule information from /schedule/infos API
+type ScheduleInfo struct {
+	ScheduleID   int64  `json:"schedule_id" toon:"schedule_id"`
+	ScheduleName string `json:"schedule_name" toon:"schedule_name"`
 }
 
 // StatusPage represents a status page

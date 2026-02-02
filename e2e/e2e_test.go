@@ -12,12 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flashcatcloud/flashduty-mcp-server/internal/flashduty"
-	pkgflashduty "github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
-	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 	mcpClient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
+
+	"github.com/flashcatcloud/flashduty-mcp-server/internal/flashduty"
+	pkgflashduty "github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
+	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
 var (

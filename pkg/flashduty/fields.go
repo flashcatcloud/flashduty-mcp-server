@@ -11,25 +11,7 @@ import (
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
-const queryFieldsDescription = `Query custom field definitions.
-
-Custom fields allow extending incident data with additional attributes.
-Use this tool to discover available fields before updating incidents.
-
-**Parameters:**
-- field_ids (optional): Comma-separated field IDs for direct lookup
-- field_name (optional): Search by exact field name (field_name must match regexp: ^[a-z][a-z0-9_]*$)
-
-**Returns:**
-- Field definitions including:
-  - field_type: checkbox, multi_select, single_select, text
-  - value_type: string, bool, float
-  - options: available values for select fields
-  - default_value: default value if set
-
-**Notes:**
-- Maximum 15 custom fields allowed per account
-- Returns all fields (no pagination needed)`
+const queryFieldsDescription = `Query custom field definitions. Use to discover available fields before updating incidents.`
 
 // QueryFields creates a tool to query custom field definitions
 func QueryFields(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -39,8 +21,8 @@ func QueryFields(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 				Title:        t("TOOL_QUERY_FIELDS_USER_TITLE", "Query fields"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("field_ids", mcp.Description("Comma-separated field IDs")),
-			mcp.WithString("field_name", mcp.Description("Search by field name")),
+			mcp.WithString("field_ids", mcp.Description("Comma-separated field IDs for direct lookup.")),
+			mcp.WithString("field_name", mcp.Description("Search by exact field name. Field names must match pattern: ^[a-z][a-z0-9_]*$")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {

@@ -14,13 +14,7 @@ import (
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
-const queryStatusPagesDescription = `Query status pages with full configuration.
-
-**Parameters:**
-- page_ids (optional): Comma-separated page IDs for direct lookup. If not provided, lists all pages.
-
-**Returns:**
-- Status pages with sections, components, and overall status`
+const queryStatusPagesDescription = `Query status pages with components. Lists all pages or filter by IDs.`
 
 // QueryStatusPages creates a tool to query status pages
 func QueryStatusPages(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -30,7 +24,7 @@ func QueryStatusPages(getClient GetFlashdutyClientFn, t translations.Translation
 				Title:        t("TOOL_QUERY_STATUS_PAGES_USER_TITLE", "Query status pages"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("page_ids", mcp.Description("Comma-separated status page IDs")),
+			mcp.WithString("page_ids", mcp.Description("Comma-separated status page IDs for direct lookup. If not provided, returns all pages.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -134,16 +128,7 @@ func QueryStatusPages(getClient GetFlashdutyClientFn, t translations.Translation
 		}
 }
 
-const listStatusChangesDescription = `List active change events (incidents/maintenances) on a status page.
-
-**Parameters:**
-- page_id (required): Status page ID
-- type (required): Change type - "incident" or "maintenance"
-
-**Returns:**
-- List of active change events (non-resolved/completed)
-- For incidents: returns those with status investigating/identified/monitoring (not resolved)
-- For maintenances: returns those with status scheduled/ongoing (not completed)`
+const listStatusChangesDescription = `List active incidents or maintenances on a status page. Returns non-resolved/non-completed events.`
 
 // ListStatusChanges creates a tool to list status page changes
 func ListStatusChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -153,8 +138,8 @@ func ListStatusChanges(getClient GetFlashdutyClientFn, t translations.Translatio
 				Title:        t("TOOL_LIST_STATUS_CHANGES_USER_TITLE", "List status changes"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithNumber("page_id", mcp.Required(), mcp.Description("Status page ID")),
-			mcp.WithString("type", mcp.Required(), mcp.Description("Change type: incident or maintenance")),
+			mcp.WithNumber("page_id", mcp.Required(), mcp.Description("Status page ID to query changes for.")),
+			mcp.WithString("type", mcp.Required(), mcp.Description("Type of change events to list."), mcp.Enum("incident", "maintenance")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -214,23 +199,7 @@ func ListStatusChanges(getClient GetFlashdutyClientFn, t translations.Translatio
 		}
 }
 
-const createStatusIncidentDescription = `Create a new incident on a status page.
-
-**Parameters:**
-- page_id (required): Status page ID
-- title (required): Incident title (max 255 characters)
-- message (optional): Initial update message describing the incident (required for the incident description)
-- status (optional): Status - investigating, identified, monitoring, resolved (default: investigating)
-- affected_components (optional): Comma-separated component IDs with status, format: "id1:degraded,id2:partial_outage"
-  - Component statuses for incidents: degraded, partial_outage, full_outage
-  - At least one component change is required
-- notify_subscribers (optional): Whether to notify subscribers (default: true)
-
-**Returns:**
-- Created change event ID
-
-**Notes:**
-- The message/description field is required for creating an incident`
+const createStatusIncidentDescription = `Create an incident on a status page with affected components and status updates.`
 
 // CreateStatusIncident creates a tool to create status page incident
 func CreateStatusIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -240,12 +209,12 @@ func CreateStatusIncident(getClient GetFlashdutyClientFn, t translations.Transla
 				Title:        t("TOOL_CREATE_STATUS_INCIDENT_USER_TITLE", "Create status incident"),
 				ReadOnlyHint: ToBoolPtr(false),
 			}),
-			mcp.WithNumber("page_id", mcp.Required(), mcp.Description("Status page ID")),
-			mcp.WithString("title", mcp.Required(), mcp.Description("Incident title")),
-			mcp.WithString("message", mcp.Description("Initial update message")),
-			mcp.WithString("status", mcp.Description("Status: investigating, identified, monitoring, resolved")),
-			mcp.WithString("affected_components", mcp.Description("Component IDs with status: id1:degraded,id2:partial_outage")),
-			mcp.WithBoolean("notify_subscribers", mcp.Description("Notify subscribers (default: true)")),
+			mcp.WithNumber("page_id", mcp.Required(), mcp.Description("Status page ID to create incident on.")),
+			mcp.WithString("title", mcp.Required(), mcp.Description("Incident title. Max 255 characters."), mcp.MaxLength(255)),
+			mcp.WithString("message", mcp.Description("Initial update message describing the incident.")),
+			mcp.WithString("status", mcp.Description("Initial incident status."), mcp.Enum("investigating", "identified", "monitoring", "resolved"), mcp.DefaultString("investigating")),
+			mcp.WithString("affected_components", mcp.Description("Comma-separated component IDs with status. Format: id1:degraded,id2:partial_outage. Valid statuses: degraded, partial_outage, full_outage.")),
+			mcp.WithBoolean("notify_subscribers", mcp.Description("Whether to notify page subscribers."), mcp.DefaultBool(true)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -340,25 +309,7 @@ func CreateStatusIncident(getClient GetFlashdutyClientFn, t translations.Transla
 		}
 }
 
-const createChangeTimelineDescription = `Add a timeline update to a status page change event.
-
-**Parameters:**
-- page_id (required): Status page ID
-- change_id (required): Change event ID to update
-- message (required): Update message describing the change
-- at (optional): Timestamp for the update (Unix timestamp in seconds, default: now)
-- status (optional): New status for incidents - investigating, identified, monitoring, resolved
-  - For maintenances use: scheduled, ongoing, completed
-- component_changes (optional): JSON array of component status changes, e.g. [{"component_id":"xxx","status":"degraded"}]
-  - Component statuses: operational, degraded, partial_outage, full_outage
-
-**Use cases:**
-- Post investigation updates
-- Mark incident as resolved
-- Update affected components
-
-**Returns:**
-- Success confirmation`
+const createChangeTimelineDescription = `Add a timeline update to a status page incident or maintenance. Update status and affected components.`
 
 // CreateChangeTimeline creates a tool to add timeline entry to status change
 func CreateChangeTimeline(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -368,12 +319,12 @@ func CreateChangeTimeline(getClient GetFlashdutyClientFn, t translations.Transla
 				Title:        t("TOOL_CREATE_CHANGE_TIMELINE_USER_TITLE", "Create change timeline"),
 				ReadOnlyHint: ToBoolPtr(false),
 			}),
-			mcp.WithNumber("page_id", mcp.Required(), mcp.Description("Status page ID")),
-			mcp.WithNumber("change_id", mcp.Required(), mcp.Description("Change event ID")),
-			mcp.WithString("message", mcp.Required(), mcp.Description("Update message (required)")),
-			mcp.WithNumber("at", mcp.Description("Timestamp (Unix timestamp, default: now)")),
-			mcp.WithString("status", mcp.Description("New status: investigating, identified, monitoring, resolved")),
-			mcp.WithString("component_changes", mcp.Description("JSON array: [{\"component_id\":\"xxx\",\"status\":\"degraded\"}]")),
+			mcp.WithNumber("page_id", mcp.Required(), mcp.Description("Status page ID.")),
+			mcp.WithNumber("change_id", mcp.Required(), mcp.Description("Change event ID (incident or maintenance) to update.")),
+			mcp.WithString("message", mcp.Required(), mcp.Description("Update message describing the timeline entry.")),
+			mcp.WithNumber("at", mcp.Description("Timestamp for update in Unix seconds. Defaults to current time.")),
+			mcp.WithString("status", mcp.Description("New status. For incidents: investigating, identified, monitoring, resolved. For maintenances: scheduled, ongoing, completed.")),
+			mcp.WithString("component_changes", mcp.Description("JSON array of component status changes. Format: [{\"component_id\":\"xxx\",\"status\":\"degraded\"}]. Valid statuses: operational, degraded, partial_outage, full_outage.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {

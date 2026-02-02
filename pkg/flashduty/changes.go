@@ -12,24 +12,7 @@ import (
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
-const queryChangesDescription = `Query change records with filters.
-
-Change records track deployments, configurations, and other operational changes
-that may be correlated with incidents.
-
-**Parameters:**
-- change_ids (optional): Comma-separated change IDs for direct lookup
-- channel_id (optional): Filter by collaboration space ID
-- start_time, end_time (optional): Unix timestamp in seconds.
-  **Time constraints:**
-  - start_time must be less than end_time
-  - Time range (end_time - start_time) must not exceed 31 days (2678400 seconds)
-  - If not specified, defaults to last 1 hour
-- type (optional): Filter by change type
-- limit (optional): Max results (1-100, default 20)
-
-**Returns:**
-- Change records with enriched channel and creator names`
+const queryChangesDescription = `Query change records (deployments, configurations). Useful for correlating changes with incidents.`
 
 // QueryChanges creates a tool to query change records
 func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -39,12 +22,12 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				Title:        t("TOOL_QUERY_CHANGES_USER_TITLE", "Query changes"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("change_ids", mcp.Description("Comma-separated change IDs")),
-			mcp.WithNumber("channel_id", mcp.Description("Filter by collaboration space ID")),
-			mcp.WithNumber("start_time", mcp.Description("Start time (Unix timestamp)")),
-			mcp.WithNumber("end_time", mcp.Description("End time (Unix timestamp)")),
-			mcp.WithString("type", mcp.Description("Filter by change type")),
-			mcp.WithNumber("limit", mcp.Description("Max results (default 20)")),
+			mcp.WithString("change_ids", mcp.Description("Comma-separated change IDs for direct lookup.")),
+			mcp.WithNumber("channel_id", mcp.Description("Filter by collaboration space ID.")),
+			mcp.WithNumber("start_time", mcp.Description("Query start time in Unix timestamp (seconds). Must be < end_time. Max range: 31 days. Defaults to 1 hour ago.")),
+			mcp.WithNumber("end_time", mcp.Description("Query end time in Unix timestamp (seconds). Defaults to now.")),
+			mcp.WithString("type", mcp.Description("Filter by change type.")),
+			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {

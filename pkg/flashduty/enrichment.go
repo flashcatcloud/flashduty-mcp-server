@@ -245,6 +245,75 @@ func (c *Client) fetchTeamInfos(ctx context.Context, teamIDs []int64) (map[int64
 	return teamMap, nil
 }
 
+// fetchScheduleInfos fetches schedule information by IDs
+func (c *Client) fetchScheduleInfos(ctx context.Context, scheduleIDs []int64) (map[int64]ScheduleInfo, error) {
+	if len(scheduleIDs) == 0 {
+		return make(map[int64]ScheduleInfo), nil
+	}
+
+	// Deduplicate schedule IDs
+	idSet := make(map[int64]struct{})
+	for _, id := range scheduleIDs {
+		if id != 0 {
+			idSet[id] = struct{}{}
+		}
+	}
+	uniqueIDs := make([]int64, 0, len(idSet))
+	for id := range idSet {
+		uniqueIDs = append(uniqueIDs, id)
+	}
+
+	if len(uniqueIDs) == 0 {
+		return make(map[int64]ScheduleInfo), nil
+	}
+
+	requestBody := map[string]interface{}{
+		"schedule_ids": uniqueIDs,
+	}
+
+	resp, err := c.makeRequest(ctx, "POST", "/schedule/infos", requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("unable to fetch schedule information: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, handleAPIError(resp)
+	}
+
+	// Schedule API returns: {"data": {"items": [{"id": 123, "name": "xxx"}, ...]}}
+	// Note: id and name may be pointers in the model, but JSON numbers/strings decode fine
+	var result struct {
+		Error *DutyError `json:"error,omitempty"`
+		Data  *struct {
+			Items []struct {
+				ID   *int64  `json:"id"`
+				Name *string `json:"name"`
+			} `json:"items"`
+		} `json:"data,omitempty"`
+	}
+	if err := parseResponse(resp, &result); err != nil {
+		return nil, err
+	}
+	if result.Error != nil {
+		return nil, fmt.Errorf("API error: %s - %s", result.Error.Code, result.Error.Message)
+	}
+
+	scheduleMap := make(map[int64]ScheduleInfo)
+	if result.Data != nil {
+		for _, item := range result.Data.Items {
+			if item.ID != nil {
+				info := ScheduleInfo{ScheduleID: *item.ID}
+				if item.Name != nil {
+					info.ScheduleName = *item.Name
+				}
+				scheduleMap[*item.ID] = info
+			}
+		}
+	}
+	return scheduleMap, nil
+}
+
 // fetchChannelInfos fetches channel information by IDs
 func (c *Client) fetchChannelInfos(ctx context.Context, channelIDs []int64) (map[int64]ChannelInfo, error) {
 	if len(channelIDs) == 0 {

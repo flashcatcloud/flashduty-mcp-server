@@ -17,40 +17,7 @@ import (
 
 const defaultQueryLimit = 20
 
-const queryIncidentsDescription = `Query incidents with comprehensive filters and return enriched data.
-
-Returns complete incident information including:
-- Responder names and emails
-- Channel name
-- Creator/Closer names
-- Alerts preview (first 20 alerts with total count, enabled by default)
-
-**Use cases:**
-- Query active incidents: progress="Triggered,Processing"
-- Query by ID: incident_ids="id1,id2"
-- Query by channel: channel_id=123
-- Query by severity: severity="Critical"
-- Query by time range: start_time, end_time
-
-**Parameters:**
-- incident_ids (optional): Comma-separated incident IDs for direct lookup
-- progress (optional): Filter by status - Triggered, Processing, Closed
-- severity (optional): Filter by severity - Info, Warning, Critical
-- channel_id (optional): Filter by collaboration space ID
-- start_time, end_time (optional): Unix timestamp in seconds. Required if no incident_ids.
-  **Time constraints:**
-  - start_time must be less than end_time
-  - Time range (end_time - start_time) must not exceed 31 days (2678400 seconds)
-  - end_time must be within the data retention period (account-specific, typically 365 days)
-  - If you get a time range error, use more recent timestamps (e.g., last 7-30 days from now)
-- title (optional): Title keyword search
-- limit (optional): Max results (default 20)
-- include_alerts (optional): Include alerts preview (default true)
-
-**Notes:**
-- Returns enriched data with human-readable names
-- Use query_incident_timeline for detailed timeline events
-- Use query_incident_alerts for more alerts`
+const queryIncidentsDescription = `Query incidents by IDs, time range, status, severity, or channel. Returns enriched data with names.`
 
 // QueryIncidents creates a tool to query incidents with enriched data
 func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -60,15 +27,15 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				Title:        t("TOOL_QUERY_INCIDENTS_USER_TITLE", "Query incidents"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("incident_ids", mcp.Description("Comma-separated incident IDs to query directly")),
-			mcp.WithString("progress", mcp.Description("Filter by progress: Triggered, Processing, Closed (comma-separated for multiple)")),
-			mcp.WithString("severity", mcp.Description("Filter by severity: Info, Warning, Critical")),
-			mcp.WithNumber("channel_id", mcp.Description("Filter by collaboration space ID")),
-			mcp.WithNumber("start_time", mcp.Description("Start time (Unix timestamp)")),
-			mcp.WithNumber("end_time", mcp.Description("End time (Unix timestamp)")),
-			mcp.WithString("title", mcp.Description("Title keyword search")),
-			mcp.WithNumber("limit", mcp.Description("Max results (default 20)")),
-			mcp.WithBoolean("include_alerts", mcp.Description("Include alerts preview (default true)")),
+			mcp.WithString("incident_ids", mcp.Description("Comma-separated incident IDs for direct lookup. If provided, other filters are ignored.")),
+			mcp.WithString("progress", mcp.Description("Filter by status. Valid values: Triggered, Processing, Closed. Comma-separated for multiple."), mcp.Enum("Triggered", "Processing", "Closed", "Triggered,Processing", "Processing,Closed", "Triggered,Closed", "Triggered,Processing,Closed")),
+			mcp.WithString("severity", mcp.Description("Filter by severity level. Valid values: Info, Warning, Critical."), mcp.Enum("Info", "Warning", "Critical")),
+			mcp.WithNumber("channel_id", mcp.Description("Filter by collaboration space ID.")),
+			mcp.WithNumber("start_time", mcp.Description("Query start time in Unix timestamp (seconds). Required if no incident_ids. Must be < end_time. Max range: 31 days.")),
+			mcp.WithNumber("end_time", mcp.Description("Query end time in Unix timestamp (seconds). Required if no incident_ids. Must be within data retention period.")),
+			mcp.WithString("title", mcp.Description("Keyword search in incident title.")),
+			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithBoolean("include_alerts", mcp.Description("Whether to include alerts preview (first 20 alerts with total count)."), mcp.DefaultBool(true)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -156,24 +123,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 		}
 }
 
-const queryIncidentTimelineDescription = `Query timeline events for one or more incidents.
-
-Returns detailed timeline with enriched operator names and event details.
-
-**Parameters:**
-- incident_ids (required): Comma-separated incident IDs to query timeline for
-
-**Event types include:**
-- i_new: Incident created
-- i_assign: Incident assigned
-- i_ack: Incident acknowledged
-- i_rslv: Incident resolved
-- i_notify: Notification sent
-- i_comm: Comment added
-- i_r_*: Field updates (title, description, severity, etc.)
-
-**Returns:**
-- Timeline events with operator names and enriched details`
+const queryIncidentTimelineDescription = `Query timeline events for incidents. Returns events like created, assigned, acknowledged, resolved, notifications.`
 
 // QueryIncidentTimeline creates a tool to query incident timeline
 func QueryIncidentTimeline(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -183,7 +133,7 @@ func QueryIncidentTimeline(getClient GetFlashdutyClientFn, t translations.Transl
 				Title:        t("TOOL_QUERY_INCIDENT_TIMELINE_USER_TITLE", "Query incident timeline"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("incident_ids", mcp.Required(), mcp.Description("Comma-separated incident IDs")),
+			mcp.WithString("incident_ids", mcp.Required(), mcp.Description("Comma-separated incident IDs to query timeline for. Event types: i_new (created), i_assign (assigned), i_ack (acknowledged), i_rslv (resolved), i_notify (notification), i_comm (comment), i_r_* (field updates).")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -253,14 +203,7 @@ func QueryIncidentTimeline(getClient GetFlashdutyClientFn, t translations.Transl
 		}
 }
 
-const queryIncidentAlertsDescription = `Query alerts for one or more incidents.
-
-**Parameters:**
-- incident_ids (required): Comma-separated incident IDs to query alerts for
-- limit (optional): Max alerts per incident (default 20)
-
-**Returns:**
-- Alerts with title, severity, status, and labels`
+const queryIncidentAlertsDescription = `Query alerts for incidents. Returns alerts with title, severity, status, and labels.`
 
 // QueryIncidentAlerts creates a tool to query incident alerts
 func QueryIncidentAlerts(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -270,8 +213,8 @@ func QueryIncidentAlerts(getClient GetFlashdutyClientFn, t translations.Translat
 				Title:        t("TOOL_QUERY_INCIDENT_ALERTS_USER_TITLE", "Query incident alerts"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("incident_ids", mcp.Required(), mcp.Description("Comma-separated incident IDs")),
-			mcp.WithNumber("limit", mcp.Description("Max alerts per incident (default 20)")),
+			mcp.WithString("incident_ids", mcp.Required(), mcp.Description("Comma-separated incident IDs to query alerts for.")),
+			mcp.WithNumber("limit", mcp.Description("Maximum alerts per incident."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -418,17 +361,7 @@ func (c *Client) fetchIncidentsByFilters(ctx context.Context, progress, severity
 	return result.Data.Items, nil
 }
 
-const createIncidentDescription = `Create a new incident in Flashduty.
-
-**Parameters:**
-- title (required): Incident title (3-200 characters)
-- severity (required): Info, Warning, or Critical
-- channel_id (optional): Collaboration space ID
-- description (optional): Incident description (max 6144 characters)
-- assigned_to (optional): Comma-separated person IDs to assign
-
-**Returns:**
-- Created incident ID and details`
+const createIncidentDescription = `Create a new incident with title and severity. Optionally assign to channel or responders.`
 
 // CreateIncident creates a tool to create a new incident
 func CreateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -438,11 +371,11 @@ func CreateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				Title:        t("TOOL_CREATE_INCIDENT_USER_TITLE", "Create incident"),
 				ReadOnlyHint: ToBoolPtr(false),
 			}),
-			mcp.WithString("title", mcp.Required(), mcp.Description("Incident title")),
-			mcp.WithString("severity", mcp.Required(), mcp.Description("Severity: Info, Warning, Critical")),
-			mcp.WithNumber("channel_id", mcp.Description("Collaboration space ID")),
-			mcp.WithString("description", mcp.Description("Incident description")),
-			mcp.WithString("assigned_to", mcp.Description("Comma-separated person IDs to assign")),
+			mcp.WithString("title", mcp.Required(), mcp.Description("Incident title. Length: 3-200 characters."), mcp.MinLength(3), mcp.MaxLength(200)),
+			mcp.WithString("severity", mcp.Required(), mcp.Description("Incident severity level."), mcp.Enum("Info", "Warning", "Critical")),
+			mcp.WithNumber("channel_id", mcp.Description("Collaboration space ID to associate the incident with.")),
+			mcp.WithString("description", mcp.Description("Incident description. Max 6144 characters."), mcp.MaxLength(6144)),
+			mcp.WithString("assigned_to", mcp.Description("Comma-separated person IDs to assign as responders. Use query_members to find IDs.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -501,19 +434,7 @@ func CreateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 		}
 }
 
-const updateIncidentDescription = `Update an existing incident.
-
-**Parameters:**
-- incident_id (required): Incident ID to update
-- title (optional): New title (3-200 characters)
-- description (optional): New description (max 6144 characters)
-- severity (optional): New severity (Info, Warning, Critical)
-- custom_fields (optional): JSON object of custom field updates, e.g. {"field_name": "value"}
-
-**Notes:**
-- Only provided fields will be updated
-- Use query_fields to discover available custom fields
-- Custom field names must match regexp: ^[a-z][a-z0-9_]*$`
+const updateIncidentDescription = `Update incident title, description, severity, or custom fields. Only provided fields are updated.`
 
 // UpdateIncident creates a tool to update an incident
 func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -523,11 +444,11 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				Title:        t("TOOL_UPDATE_INCIDENT_USER_TITLE", "Update incident"),
 				ReadOnlyHint: ToBoolPtr(false),
 			}),
-			mcp.WithString("incident_id", mcp.Required(), mcp.Description("Incident ID to update")),
-			mcp.WithString("title", mcp.Description("New title")),
-			mcp.WithString("description", mcp.Description("New description")),
-			mcp.WithString("severity", mcp.Description("New severity: Info, Warning, Critical")),
-			mcp.WithString("custom_fields", mcp.Description("JSON object of custom field updates, e.g. {\"field_name\": \"value\"}")),
+			mcp.WithString("incident_id", mcp.Required(), mcp.Description("The incident ID to update.")),
+			mcp.WithString("title", mcp.Description("New incident title. Length: 3-200 characters."), mcp.MinLength(3), mcp.MaxLength(200)),
+			mcp.WithString("description", mcp.Description("New incident description. Max 6144 characters."), mcp.MaxLength(6144)),
+			mcp.WithString("severity", mcp.Description("New severity level."), mcp.Enum("Info", "Warning", "Critical")),
+			mcp.WithString("custom_fields", mcp.Description("JSON object of custom field updates. Format: {\"field_name\": \"value\"}. Field names must match ^[a-z][a-z0-9_]*$. Use query_fields to discover available fields.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -674,14 +595,7 @@ func (c *Client) updateCustomField(ctx context.Context, incidentID, fieldName st
 	return nil
 }
 
-const ackIncidentDescription = `Acknowledge one or more incidents.
-
-**Parameters:**
-- incident_ids (required): Comma-separated incident IDs to acknowledge
-
-**Notes:**
-- Moves incidents from Triggered to Processing status
-- Records the acknowledging user in timeline`
+const ackIncidentDescription = `Acknowledge incidents. Moves status from Triggered to Processing.`
 
 // AckIncident creates a tool to acknowledge incidents
 func AckIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -691,7 +605,7 @@ func AckIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 				Title:        t("TOOL_ACK_INCIDENT_USER_TITLE", "Acknowledge incident"),
 				ReadOnlyHint: ToBoolPtr(false),
 			}),
-			mcp.WithString("incident_ids", mcp.Required(), mcp.Description("Comma-separated incident IDs to acknowledge")),
+			mcp.WithString("incident_ids", mcp.Required(), mcp.Description("Comma-separated incident IDs to acknowledge. Records acknowledging user in timeline.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -737,14 +651,7 @@ func AckIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 		}
 }
 
-const closeIncidentDescription = `Close (resolve) one or more incidents.
-
-**Parameters:**
-- incident_ids (required): Comma-separated incident IDs to close
-
-**Notes:**
-- Moves incidents to Closed status
-- Records the closing user in timeline`
+const closeIncidentDescription = `Close (resolve) incidents. Moves status to Closed.`
 
 // CloseIncident creates a tool to close incidents
 func CloseIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -754,7 +661,7 @@ func CloseIncident(getClient GetFlashdutyClientFn, t translations.TranslationHel
 				Title:        t("TOOL_CLOSE_INCIDENT_USER_TITLE", "Close incident"),
 				ReadOnlyHint: ToBoolPtr(false),
 			}),
-			mcp.WithString("incident_ids", mcp.Required(), mcp.Description("Comma-separated incident IDs to close")),
+			mcp.WithString("incident_ids", mcp.Required(), mcp.Description("Comma-separated incident IDs to close/resolve. Records closing user in timeline.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -800,19 +707,7 @@ func CloseIncident(getClient GetFlashdutyClientFn, t translations.TranslationHel
 		}
 }
 
-const listSimilarIncidentsDescription = `Find similar historical incidents for a given incident.
-
-**Parameters:**
-- incident_id (required): Reference incident ID to find similar incidents
-- limit (optional): Max results (default 20)
-
-**Use cases:**
-- Find past incidents with similar patterns
-- Review historical resolutions for guidance
-- Identify recurring issues
-
-**Returns:**
-- List of similar incidents with enriched data`
+const listSimilarIncidentsDescription = `Find similar historical incidents. Useful for reviewing past resolutions and identifying recurring issues.`
 
 // ListSimilarIncidents creates a tool to find similar incidents
 func ListSimilarIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -822,8 +717,8 @@ func ListSimilarIncidents(getClient GetFlashdutyClientFn, t translations.Transla
 				Title:        t("TOOL_LIST_SIMILAR_INCIDENTS_USER_TITLE", "List similar incidents"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("incident_id", mcp.Required(), mcp.Description("Reference incident ID")),
-			mcp.WithNumber("limit", mcp.Description("Max results (default 20)")),
+			mcp.WithString("incident_id", mcp.Required(), mcp.Description("Reference incident ID to find similar historical incidents for.")),
+			mcp.WithNumber("limit", mcp.Description("Maximum number of similar incidents to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {

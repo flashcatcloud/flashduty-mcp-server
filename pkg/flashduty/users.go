@@ -13,16 +13,7 @@ import (
 
 const defaultUsersQueryLimit = 20
 
-const queryMembersDescription = `Query members (users) in the account.
-
-**Parameters:**
-- person_ids (optional): Comma-separated person IDs for direct lookup
-- name (optional): Search by name (fuzzy match)
-- email (optional): Search by email
-
-**Returns:**
-- Member list with ID, name, email, and team memberships
-- When listing members, returns up to 100 results per page (default limit)`
+const queryMembersDescription = `Query members (users) by IDs, name, or email. Returns member info with team memberships.`
 
 // QueryMembers creates a tool to query members
 func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -32,9 +23,9 @@ func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				Title:        t("TOOL_QUERY_MEMBERS_USER_TITLE", "Query members"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("person_ids", mcp.Description("Comma-separated person IDs")),
-			mcp.WithString("name", mcp.Description("Search by name")),
-			mcp.WithString("email", mcp.Description("Search by email")),
+			mcp.WithString("person_ids", mcp.Description("Comma-separated person IDs for direct lookup.")),
+			mcp.WithString("name", mcp.Description("Search by member name (fuzzy match).")),
+			mcp.WithString("email", mcp.Description("Search by email address.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -117,15 +108,7 @@ func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 		}
 }
 
-const queryTeamsDescription = `Query teams in the account.
-
-**Parameters:**
-- team_ids (optional): Comma-separated team IDs for direct lookup
-- name (optional): Search by team name
-
-**Returns:**
-- Team list with members (names and emails)
-- When listing teams, returns up to 20 results per page (default limit, max 100)`
+const queryTeamsDescription = `Query teams by IDs or name. Returns team info with member details.`
 
 // QueryTeams creates a tool to query teams
 func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -135,8 +118,8 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 				Title:        t("TOOL_QUERY_TEAMS_USER_TITLE", "Query teams"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("team_ids", mcp.Description("Comma-separated team IDs")),
-			mcp.WithString("name", mcp.Description("Search by team name")),
+			mcp.WithString("team_ids", mcp.Description("Comma-separated team IDs for direct lookup.")),
+			mcp.WithString("name", mcp.Description("Search by team name.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
