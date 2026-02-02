@@ -12,9 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flashcatcloud/flashduty-mcp-server/pkg/trace"
-
 	mcplog "github.com/flashcatcloud/flashduty-mcp-server/pkg/log"
+	"github.com/flashcatcloud/flashduty-mcp-server/pkg/trace"
 )
 
 const (

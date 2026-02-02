@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/flashcatcloud/flashduty-mcp-server/internal/flashduty"
-
 	flashdutyPkg "github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 )
 

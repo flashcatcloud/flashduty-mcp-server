@@ -17,12 +17,11 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	pkgerrors "github.com/flashcatcloud/flashduty-mcp-server/pkg/errors"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
+	mcplog "github.com/flashcatcloud/flashduty-mcp-server/pkg/log"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/trace"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
-
-	pkgerrors "github.com/flashcatcloud/flashduty-mcp-server/pkg/errors"
-	mcplog "github.com/flashcatcloud/flashduty-mcp-server/pkg/log"
 )
 
 // slogAdapter adapts slog.Logger to mcp-go's util.Logger interface
