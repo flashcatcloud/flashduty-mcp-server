@@ -1,18 +1,17 @@
 module github.com/flashcatcloud/flashduty-mcp-server
 
-go 1.24.4
+go 1.25.0
 
 require (
 	github.com/bluele/gcache v0.0.2
 	github.com/google/go-github/v72 v72.0.0
 	github.com/josephburnett/jd v1.9.2
 	github.com/mark3labs/mcp-go v0.43.2
-	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.10.0
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.20.0
 )
 
 require (
