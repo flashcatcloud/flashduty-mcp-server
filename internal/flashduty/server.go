@@ -340,6 +340,10 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 	httpServer := server.NewStreamableHTTPServer(
 		mcpServer,
 		server.WithLogger(&slogAdapter{logger: logger}),
+		// Return 405 for GET requests — this server doesn't use server-initiated
+		// features (sampling, elicitation). Without this, the SDK's standalone SSE
+		// GET hangs indefinitely because mcp-go creates an orphan session and blocks.
+		server.WithDisableStreaming(true),
 		server.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
 			// Extract W3C Trace Context from HTTP headers, or generate a new one
 			traceCtx, err := trace.FromHTTPHeadersOrNew(r.Header)
