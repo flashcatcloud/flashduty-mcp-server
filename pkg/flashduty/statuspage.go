@@ -7,8 +7,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 )
 
 const queryStatusPagesDescription = `Query status pages with components. Lists all pages or filter by IDs.`

@@ -8,8 +8,8 @@ import (
 
 	"github.com/bluele/gcache"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/trace"
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 )
 
 type contextKey string
