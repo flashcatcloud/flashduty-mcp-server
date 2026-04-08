@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	github.com/bluele/gcache v0.0.2
-	github.com/flashcatcloud/flashduty-sdk v0.3.0
+	github.com/flashcatcloud/flashduty-sdk v0.3.1-0.20260408101253-bbe0d25ae134
 	github.com/google/go-github/v72 v72.0.0
 	github.com/josephburnett/jd v1.9.2
 	github.com/mark3labs/mcp-go v0.45.0

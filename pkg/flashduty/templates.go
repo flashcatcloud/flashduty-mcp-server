@@ -3,6 +3,7 @@ package flashduty
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -15,6 +16,12 @@ import (
 
 const getPresetTemplateDescription = `Fetch the preset (default) notification template for a specific channel. Returns the Go template code used as the starting point for customization.`
 
+func sortedChannelEnumValues() []string {
+	channels := append([]string(nil), sdk.ChannelEnumValues()...)
+	slices.Sort(channels)
+	return channels
+}
+
 // GetPresetTemplate creates a tool to fetch the preset template for a channel.
 func GetPresetTemplate(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
 	return mcp.NewTool("get_preset_template",
@@ -26,11 +33,7 @@ func GetPresetTemplate(getClient GetFlashdutyClientFn, t translations.Translatio
 			mcp.WithString("channel",
 				mcp.Required(),
 				mcp.Description("The notification channel to get the preset template for."),
-				mcp.Enum(sdk.ChannelEnumValues()...),
-			),
-			mcp.WithString("locale",
-				mcp.Description("Locale for the preset template. Defaults to zh-CN."),
-				mcp.Enum("zh-CN", "en-US"),
+				mcp.Enum(sortedChannelEnumValues()...),
 			),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
@@ -43,14 +46,8 @@ func GetPresetTemplate(getClient GetFlashdutyClientFn, t translations.Translatio
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			locale, _ := OptionalParam[string](request, "locale")
-			if locale == "" {
-				locale = "zh-CN"
-			}
-
 			input := &sdk.GetPresetTemplateInput{
 				Channel: channel,
-				Locale:  locale,
 			}
 
 			output, err := client.GetPresetTemplate(ctx, input)
@@ -77,7 +74,7 @@ func ValidateTemplate(getClient GetFlashdutyClientFn, t translations.Translation
 			mcp.WithString("channel",
 				mcp.Required(),
 				mcp.Description("The notification channel this template is for."),
-				mcp.Enum(sdk.ChannelEnumValues()...),
+				mcp.Enum(sortedChannelEnumValues()...),
 			),
 			mcp.WithString("template_code",
 				mcp.Required(),

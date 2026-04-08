@@ -147,6 +147,14 @@ func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 	return flashdutyServer, nil
 }
 
+func newStreamableHTTPServer(mcpServer *server.MCPServer, logger *slog.Logger, contextFunc server.HTTPContextFunc) *server.StreamableHTTPServer {
+	return server.NewStreamableHTTPServer(
+		mcpServer,
+		server.WithLogger(&slogAdapter{logger: logger}),
+		server.WithHTTPContextFunc(contextFunc),
+	)
+}
+
 type StdioServerConfig struct {
 	// Version of the server
 	Version string
@@ -339,29 +347,21 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 		return fmt.Errorf("failed to create MCP server: %w", err)
 	}
 
-	httpServer := server.NewStreamableHTTPServer(
-		mcpServer,
-		server.WithLogger(&slogAdapter{logger: logger}),
-		// Return 405 for GET requests — this server doesn't use server-initiated
-		// features (sampling, elicitation). Without this, the SDK's standalone SSE
-		// GET hangs indefinitely because mcp-go creates an orphan session and blocks.
-		server.WithDisableStreaming(true),
-		server.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
-			// Extract W3C Trace Context from HTTP headers, or generate a new one
-			traceCtx, err := trace.FromHTTPHeadersOrNew(r.Header)
-			if err != nil {
-				logger.Warn("Failed to generate trace context, continuing without trace", "error", err)
-				// Continue without trace context if generation fails
-			} else {
-				ctx = trace.ContextWithTraceContext(ctx, traceCtx)
-			}
+	httpServer := newStreamableHTTPServer(mcpServer, logger, func(ctx context.Context, r *http.Request) context.Context {
+		// Extract W3C Trace Context from HTTP headers, or generate a new one
+		traceCtx, err := trace.FromHTTPHeadersOrNew(r.Header)
+		if err != nil {
+			logger.Warn("Failed to generate trace context, continuing without trace", "error", err)
+			// Continue without trace context if generation fails
+		} else {
+			ctx = trace.ContextWithTraceContext(ctx, traceCtx)
+		}
 
-			// Note: HTTP request logging is handled by MCP hooks (OnBeforeAny, OnSuccess, OnError)
-			// which provide more detailed information including method, params, and results.
+		// Note: HTTP request logging is handled by MCP hooks (OnBeforeAny, OnSuccess, OnError)
+		// which provide more detailed information including method, params, and results.
 
-			return httpContextFunc(ctx, r, cfg.BaseURL)
-		}),
-	)
+		return httpContextFunc(ctx, r, cfg.BaseURL)
+	})
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", httpServer)

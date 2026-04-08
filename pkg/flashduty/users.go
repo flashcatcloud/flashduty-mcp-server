@@ -110,6 +110,13 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve teams: %v", err)), nil
 			}
 
+			// Preserve the historical direct-lookup shape for team_ids queries.
+			if len(input.TeamIDs) > 0 {
+				return MarshalResult(map[string]any{
+					"items": output.Teams,
+				}), nil
+			}
+
 			return MarshalResult(map[string]any{
 				"teams": output.Teams,
 				"total": output.Total,
