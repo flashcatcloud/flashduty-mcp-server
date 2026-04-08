@@ -16,6 +16,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/flashcatcloud/flashduty-mcp-server/internal/flashduty"
 	pkgflashduty "github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
@@ -55,13 +56,19 @@ func getE2EBaseURL() string {
 	return baseURL
 }
 
-// getAPIClient creates a native Flashduty API client for verification purposes
-func getAPIClient(t *testing.T) *pkgflashduty.Client {
+// getAPIClient creates a native Flashduty SDK client for verification purposes
+func getAPIClient(t *testing.T) *sdk.Client {
 	appKey := getE2EAppKey(t)
 	baseURL := getE2EBaseURL()
 
-	client, err := pkgflashduty.NewClient(appKey, baseURL, "e2e-test-client/1.0.0")
-	require.NoError(t, err, "expected to create Flashduty API client")
+	opts := []sdk.Option{
+		sdk.WithUserAgent("e2e-test-client/1.0.0"),
+	}
+	if baseURL != "" {
+		opts = append(opts, sdk.WithBaseURL(baseURL))
+	}
+	client, err := sdk.NewClient(appKey, opts...)
+	require.NoError(t, err, "expected to create Flashduty SDK client")
 
 	return client
 }

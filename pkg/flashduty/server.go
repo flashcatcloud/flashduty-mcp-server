@@ -2,6 +2,8 @@ package flashduty
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -80,4 +82,36 @@ func OptionalInt(r mcp.CallToolRequest, p string) (int, error) {
 // ToBoolPtr converts a bool to a *bool pointer.
 func ToBoolPtr(b bool) *bool {
 	return &b
+}
+
+// parseCommaSeparatedStrings splits a comma-separated string into trimmed non-empty parts.
+func parseCommaSeparatedStrings(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// parseCommaSeparatedInts splits a comma-separated string into ints, skipping invalid values.
+func parseCommaSeparatedInts(s string) []int {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := make([]int, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if v, err := strconv.Atoi(p); err == nil {
+			result = append(result, v)
+		}
+	}
+	return result
 }

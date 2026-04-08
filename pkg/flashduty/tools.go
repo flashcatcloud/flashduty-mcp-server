@@ -6,7 +6,7 @@ import (
 )
 
 // DefaultTools is the default list of enabled Flashduty toolsets
-var DefaultTools = []string{"incidents", "changes", "status_page", "users", "channels", "fields"}
+var DefaultTools = []string{"incidents", "changes", "status_page", "users", "channels", "fields", "templates"}
 
 // DefaultToolsetGroup returns the default toolset group for Flashduty
 func DefaultToolsetGroup(getClient GetFlashdutyClientFn, readOnly bool, t translations.TranslationHelperFunc) *toolsets.ToolsetGroup {
@@ -69,6 +69,16 @@ func DefaultToolsetGroup(getClient GetFlashdutyClientFn, readOnly bool, t transl
 			toolsets.NewServerTool(QueryFields(getClient, t)),
 		)
 	group.AddToolset(fields)
+
+	// Templates toolset (4 tools)
+	templates := toolsets.NewToolset("templates", "Notification template management and validation tools").
+		AddReadTools(
+			toolsets.NewServerTool(GetPresetTemplate(getClient, t)),
+			toolsets.NewServerTool(ValidateTemplate(getClient, t)),
+			toolsets.NewServerTool(ListTemplateVariables(getClient, t)),
+			toolsets.NewServerTool(ListTemplateFunctions(getClient, t)),
+		)
+	group.AddToolset(templates)
 
 	return group
 }

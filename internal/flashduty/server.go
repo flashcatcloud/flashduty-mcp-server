@@ -17,6 +17,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	sdk "github.com/flashcatcloud/flashduty-sdk"
+
 	pkgerrors "github.com/flashcatcloud/flashduty-mcp-server/pkg/errors"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 	mcplog "github.com/flashcatcloud/flashduty-mcp-server/pkg/log"
@@ -128,7 +130,7 @@ func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 
 	flashdutyServer := server.NewMCPServer("flashduty-mcp-server", cfg.Version, server.WithHooks(hooks))
 
-	getClientFn := func(ctx context.Context) (context.Context, *flashduty.Client, error) {
+	getClientFn := func(ctx context.Context) (context.Context, *sdk.Client, error) {
 		return getClient(ctx, cfg, cfg.Version)
 	}
 

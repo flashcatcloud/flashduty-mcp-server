@@ -3,15 +3,13 @@ package flashduty
 import (
 	"context"
 	"fmt"
-	"net/http"
 
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
-
-const defaultUsersQueryLimit = 20
 
 const queryMembersDescription = `Query members (users) by IDs, name, or email. Returns member info with team memberships.`
 
@@ -36,74 +34,36 @@ func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			name, _ := OptionalParam[string](request, "name")
 			email, _ := OptionalParam[string](request, "email")
 
-			// Query by person IDs
+			input := &sdk.ListMembersInput{
+				Name:  name,
+				Email: email,
+			}
+
 			if personIdsStr != "" {
 				personIDs := parseCommaSeparatedInts(personIdsStr)
 				if len(personIDs) == 0 {
 					return mcp.NewToolResultError("person_ids must contain at least one valid ID when specified"), nil
 				}
-
 				int64IDs := make([]int64, len(personIDs))
 				for i, id := range personIDs {
 					int64IDs[i] = int64(id)
 				}
-
-				personMap, err := client.fetchPersonInfos(ctx, int64IDs)
-				if err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve members: %v", err)), nil
-				}
-
-				members := make([]PersonInfo, 0, len(personMap))
-				for _, p := range personMap {
-					members = append(members, p)
-				}
-
-				return MarshalResult(map[string]any{
-					"members": members,
-					"total":   len(members),
-				}), nil
+				input.PersonIDs = int64IDs
 			}
 
-			// List all members with optional filters
-			requestBody := map[string]interface{}{
-				"p":     1,
-				"limit": defaultUsersQueryLimit,
-			}
-			if name != "" {
-				requestBody["member_name"] = name
-			}
-			if email != "" {
-				requestBody["email"] = email
-			}
-
-			resp, err := client.makeRequest(ctx, "POST", "/member/list", requestBody)
+			output, err := client.ListMembers(ctx, input)
 			if err != nil {
-				return nil, fmt.Errorf("unable to list members: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
+				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve members: %v", err)), nil
 			}
 
-			var result MemberListResponse
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
-			}
-
-			members := []MemberItem{}
-			total := 0
-			if result.Data != nil {
-				members = result.Data.Items
-				total = result.Data.Total
+			members := any(output.Members)
+			if len(output.PersonInfos) > 0 {
+				members = output.PersonInfos
 			}
 
 			return MarshalResult(map[string]any{
 				"members": members,
-				"total":   total,
+				"total":   output.Total,
 			}), nil
 		}
 }
@@ -129,105 +89,30 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 			teamIdsStr, _ := OptionalParam[string](request, "team_ids")
 			name, _ := OptionalParam[string](request, "name")
 
-			// Query by team IDs
+			input := &sdk.ListTeamsInput{
+				Name: name,
+			}
+
 			if teamIdsStr != "" {
 				teamIDs := parseCommaSeparatedInts(teamIdsStr)
 				if len(teamIDs) == 0 {
 					return mcp.NewToolResultError("team_ids must contain at least one valid ID when specified"), nil
 				}
-
-				requestBody := map[string]interface{}{
-					"team_ids": teamIDs,
+				int64IDs := make([]int64, len(teamIDs))
+				for i, id := range teamIDs {
+					int64IDs[i] = int64(id)
 				}
-
-				resp, err := client.makeRequest(ctx, "POST", "/team/infos", requestBody)
-				if err != nil {
-					return nil, fmt.Errorf("unable to retrieve teams: %w", err)
-				}
-				defer func() { _ = resp.Body.Close() }()
-
-				if resp.StatusCode != http.StatusOK {
-					return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
-				}
-
-				var result FlashdutyResponse
-				if err := parseResponse(resp, &result); err != nil {
-					return nil, err
-				}
-				if result.Error != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
-				}
-
-				return MarshalResult(result.Data), nil
+				input.TeamIDs = int64IDs
 			}
 
-			// List all teams
-			requestBody := map[string]interface{}{
-				"p":     1,
-				"limit": defaultUsersQueryLimit,
-			}
-			if name != "" {
-				requestBody["team_name"] = name
-			}
-
-			resp, err := client.makeRequest(ctx, "POST", "/team/list", requestBody)
+			output, err := client.ListTeams(ctx, input)
 			if err != nil {
-				return nil, fmt.Errorf("unable to list teams: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
-			}
-
-			var result struct {
-				Error *DutyError `json:"error,omitempty"`
-				Data  *struct {
-					Items []struct {
-						TeamID   int64  `json:"team_id"`
-						TeamName string `json:"team_name"`
-						Members  []struct {
-							PersonID   int64  `json:"person_id"`
-							PersonName string `json:"person_name"`
-							Email      string `json:"email,omitempty"`
-						} `json:"members,omitempty"`
-					} `json:"items"`
-					Total int `json:"total"`
-				} `json:"data,omitempty"`
-			}
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
-			}
-
-			teams := []TeamInfo{}
-			total := 0
-			if result.Data != nil {
-				for _, t := range result.Data.Items {
-					team := TeamInfo{
-						TeamID:   t.TeamID,
-						TeamName: t.TeamName,
-					}
-					if len(t.Members) > 0 {
-						team.Members = make([]TeamMember, 0, len(t.Members))
-						for _, m := range t.Members {
-							team.Members = append(team.Members, TeamMember{
-								PersonID:   m.PersonID,
-								PersonName: m.PersonName,
-								Email:      m.Email,
-							})
-						}
-					}
-					teams = append(teams, team)
-				}
-				total = result.Data.Total
+				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve teams: %v", err)), nil
 			}
 
 			return MarshalResult(map[string]any{
-				"teams": teams,
-				"total": total,
+				"teams": output.Teams,
+				"total": output.Total,
 			}), nil
 		}
 }
