@@ -3,11 +3,10 @@ package flashduty
 import (
 	"context"
 	"fmt"
-	"net/http"
 
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
@@ -45,128 +44,26 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				limit = 20
 			}
 
-			requestBody := map[string]interface{}{
-				"p":     1,
-				"limit": limit,
+			input := &sdk.ListChangesInput{
+				ChannelID: int64(channelID),
+				StartTime: int64(startTime),
+				EndTime:   int64(endTime),
+				Type:      changeType,
+				Limit:     limit,
 			}
 
 			if changeIdsStr != "" {
-				changeIDs := parseCommaSeparatedStrings(changeIdsStr)
-				requestBody["change_ids"] = changeIDs
-			}
-			if channelID > 0 {
-				requestBody["channel_id"] = channelID
-			}
-			if startTime > 0 {
-				requestBody["start_time"] = startTime
-			}
-			if endTime > 0 {
-				requestBody["end_time"] = endTime
-			}
-			if changeType != "" {
-				requestBody["type"] = changeType
+				input.ChangeIDs = parseCommaSeparatedStrings(changeIdsStr)
 			}
 
-			resp, err := client.makeRequest(ctx, "POST", "/change/list", requestBody)
+			output, err := client.ListChanges(ctx, input)
 			if err != nil {
-				return nil, fmt.Errorf("failed to query changes: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
-			}
-
-			var result struct {
-				Error *DutyError `json:"error,omitempty"`
-				Data  *struct {
-					Items []struct {
-						ChangeID    string            `json:"change_id"`
-						Title       string            `json:"title"`
-						Description string            `json:"description,omitempty"`
-						Type        string            `json:"type,omitempty"`
-						Status      string            `json:"status,omitempty"`
-						ChannelID   int64             `json:"channel_id,omitempty"`
-						CreatorID   int64             `json:"creator_id,omitempty"`
-						StartTime   int64             `json:"start_time,omitempty"`
-						EndTime     int64             `json:"end_time,omitempty"`
-						Labels      map[string]string `json:"labels,omitempty"`
-					} `json:"items"`
-					Total int `json:"total"`
-				} `json:"data,omitempty"`
-			}
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
-			}
-
-			if result.Data == nil || len(result.Data.Items) == 0 {
-				return MarshalResult(map[string]any{
-					"changes": []Change{},
-					"total":   0,
-				}), nil
-			}
-
-			// Collect IDs for enrichment
-			channelIDs := make([]int64, 0)
-			personIDs := make([]int64, 0)
-			for _, item := range result.Data.Items {
-				if item.ChannelID != 0 {
-					channelIDs = append(channelIDs, item.ChannelID)
-				}
-				if item.CreatorID != 0 {
-					personIDs = append(personIDs, item.CreatorID)
-				}
-			}
-
-			// Fetch enrichment data concurrently
-			var channelMap map[int64]ChannelInfo
-			var personMap map[int64]PersonInfo
-			g, gctx := errgroup.WithContext(ctx)
-
-			g.Go(func() error {
-				channelMap, _ = client.fetchChannelInfos(gctx, channelIDs)
-				return nil
-			})
-
-			g.Go(func() error {
-				personMap, _ = client.fetchPersonInfos(gctx, personIDs)
-				return nil
-			})
-
-			_ = g.Wait() // Ignore errors for enrichment as it's best-effort
-
-			// Build enriched changes
-			changes := make([]Change, 0, len(result.Data.Items))
-			for _, item := range result.Data.Items {
-				change := Change{
-					ChangeID:    item.ChangeID,
-					Title:       item.Title,
-					Description: item.Description,
-					Type:        item.Type,
-					Status:      item.Status,
-					ChannelID:   item.ChannelID,
-					CreatorID:   item.CreatorID,
-					StartTime:   item.StartTime,
-					EndTime:     item.EndTime,
-					Labels:      item.Labels,
-				}
-
-				if ch, ok := channelMap[item.ChannelID]; ok {
-					change.ChannelName = ch.ChannelName
-				}
-				if p, ok := personMap[item.CreatorID]; ok {
-					change.CreatorName = p.PersonName
-				}
-
-				changes = append(changes, change)
+				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve changes: %v", err)), nil
 			}
 
 			return MarshalResult(map[string]any{
-				"changes": changes,
-				"total":   result.Data.Total,
+				"changes": output.Changes,
+				"total":   output.Total,
 			}), nil
 		}
 }

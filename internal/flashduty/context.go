@@ -3,11 +3,13 @@ package flashduty
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/bluele/gcache"
 
-	"github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
+	"github.com/flashcatcloud/flashduty-mcp-server/pkg/trace"
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 )
 
 type contextKey string
@@ -29,13 +31,13 @@ func ConfigFromContext(ctx context.Context) (FlashdutyConfig, bool) {
 }
 
 // clientFromContext returns the Flashduty client from the context.
-func clientFromContext(ctx context.Context) (*flashduty.Client, bool) {
-	client, ok := ctx.Value(flashdutyClientKey).(*flashduty.Client)
+func clientFromContext(ctx context.Context) (*sdk.Client, bool) {
+	client, ok := ctx.Value(flashdutyClientKey).(*sdk.Client)
 	return client, ok
 }
 
 // contextWithClient adds the Flashduty client to the context.
-func contextWithClient(ctx context.Context, client *flashduty.Client) context.Context {
+func contextWithClient(ctx context.Context, client *sdk.Client) context.Context {
 	return context.WithValue(ctx, flashdutyClientKey, client)
 }
 
@@ -43,11 +45,11 @@ var clientCache = gcache.New(1000).
 	Expiration(time.Hour).
 	Build()
 
-// getClientFromContext is a helper function for tool handlers to get a flashduty client.
+// getClient is a helper function for tool handlers to get a flashduty client.
 // It will try to get the client from the context first. If not found, it will create a new one
 // based on the config in the context, and cache it in the context for future use in the same request.
 // It falls back to the default config if no config is found in the context.
-func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) (context.Context, *flashduty.Client, error) {
+func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) (context.Context, *sdk.Client, error) {
 	if client, ok := clientFromContext(ctx); ok {
 		return ctx, client, nil
 	}
@@ -64,12 +66,24 @@ func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) 
 	// Use APP key and BaseURL as cache key to handle different environments.
 	cacheKey := fmt.Sprintf("%s|%s", cfg.APPKey, cfg.BaseURL)
 	if client, err := clientCache.Get(cacheKey); err == nil {
-		return contextWithClient(ctx, client.(*flashduty.Client)), client.(*flashduty.Client), nil
+		return contextWithClient(ctx, client.(*sdk.Client)), client.(*sdk.Client), nil
 	}
 
 	userAgent := fmt.Sprintf("flashduty-mcp-server/%s", version)
 
-	client, err := flashduty.NewClient(cfg.APPKey, cfg.BaseURL, userAgent)
+	opts := []sdk.Option{
+		sdk.WithUserAgent(userAgent),
+		sdk.WithRequestHook(func(req *http.Request) {
+			if traceCtx := trace.FromContext(req.Context()); traceCtx != nil {
+				traceCtx.SetHTTPHeaders(req.Header)
+			}
+		}),
+	}
+	if cfg.BaseURL != "" {
+		opts = append(opts, sdk.WithBaseURL(cfg.BaseURL))
+	}
+
+	client, err := sdk.NewClient(cfg.APPKey, opts...)
 	if err != nil {
 		return ctx, nil, fmt.Errorf("failed to create Flashduty client: %w", err)
 	}
