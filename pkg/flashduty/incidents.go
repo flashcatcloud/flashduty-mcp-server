@@ -30,7 +30,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			mcp.WithString("incident_ids", mcp.Description("Comma-separated incident IDs for direct lookup. If provided, other filters are ignored.")),
 			mcp.WithString("progress", mcp.Description("Filter by status. Valid values: Triggered, Processing, Closed. Comma-separated for multiple."), mcp.Enum("Triggered", "Processing", "Closed", "Triggered,Processing", "Processing,Closed", "Triggered,Closed", "Triggered,Processing,Closed")),
 			mcp.WithString("severity", mcp.Description("Filter by severity level. Valid values: Info, Warning, Critical."), mcp.Enum("Info", "Warning", "Critical")),
-			mcp.WithString("channel_ids", mcp.Description("Filter by collaboration space IDs. Comma-separated for multiple.")),
+			mcp.WithString("channel_ids", mcp.Description("Filter by channel IDs. Comma-separated for multiple.")),
 			mcp.WithNumber("start_time", mcp.Description("Query start time in Unix timestamp (seconds). Required if no incident_ids. Must be < end_time. Max range: 31 days.")),
 			mcp.WithNumber("end_time", mcp.Description("Query end time in Unix timestamp (seconds). Required if no incident_ids. Must be within data retention period.")),
 			mcp.WithString("title", mcp.Description("Keyword search in incident title.")),
@@ -374,7 +374,7 @@ func CreateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			}),
 			mcp.WithString("title", mcp.Required(), mcp.Description("Incident title. Length: 3-200 characters."), mcp.MinLength(3), mcp.MaxLength(200)),
 			mcp.WithString("severity", mcp.Required(), mcp.Description("Incident severity level."), mcp.Enum("Info", "Warning", "Critical")),
-			mcp.WithNumber("channel_id", mcp.Description("Collaboration space ID to associate the incident with.")),
+			mcp.WithNumber("channel_id", mcp.Description("Channel ID to associate the incident with.")),
 			mcp.WithString("description", mcp.Description("Incident description. Max 6144 characters."), mcp.MaxLength(6144)),
 			mcp.WithString("assigned_to", mcp.Description("Comma-separated person IDs to assign as responders. Use query_members to find IDs.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

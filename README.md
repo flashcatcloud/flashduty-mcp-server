@@ -10,6 +10,16 @@ The Flashduty MCP Server is a [Model Context Protocol (MCP)](https://modelcontex
 - Extracting and analyzing data from Flashduty.
 - Building AI-powered tools and applications that interact with Flashduty.
 
+### Supported Transports
+
+| Transport | Supported | Notes |
+|---|---|---|
+| **stdio** | ✅ | `flashduty-mcp-server stdio`. Use this for local hosts (Cursor, Claude Desktop, etc.). |
+| **Streamable HTTP** | ✅ | `flashduty-mcp-server http`. Endpoints: `/mcp` (canonical) and `/flashduty` (legacy alias). Public instance: `https://mcp.flashcat.cloud/mcp`. |
+| **Standalone SSE (HTTP/SSE)** | ❌ | The legacy SSE transport (separate `GET /sse` endpoint) is **not supported**. The server returns `405 Method Not Allowed` for `GET` requests by design. Use Streamable HTTP — it already streams responses over `POST` per the MCP spec. |
+
+> If your MCP host only supports the legacy SSE transport, upgrade the host or use `stdio` locally.
+
 ---
 
 ## Remote Flashduty MCP Server
@@ -286,7 +296,7 @@ The following toolsets are available (all are on by default). You can also use `
 | `changes`      | Change record query                              | 1     |
 | `status_page`  | Status page management                           | 4     |
 | `users`        | Member and team query                            | 2     |
-| `channels`     | Collaboration space and escalation rules         | 2     |
+| `channels`     | Channels and escalation rules                    | 2     |
 | `fields`       | Custom field definitions                         | 1     |
 
 **Total: 16 tools**
@@ -316,8 +326,8 @@ The following toolsets are available (all are on by default). You can also use `
 - `query_members` - Query members with optional filters
 - `query_teams` - Query teams with member details
 
-### `channels` - Collaboration Space and Escalation Rules (2 tools)
-- `query_channels` - Query collaboration spaces with enriched data (team and creator names)
+### `channels` - Channels and Escalation Rules (2 tools)
+- `query_channels` - Query channels with enriched data (team and creator names)
 - `query_escalation_rules` - Query escalation rules for a channel
 
 ### `fields` - Custom Field Definitions (1 tool)

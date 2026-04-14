@@ -56,7 +56,7 @@ func DefaultToolsetGroup(getClient GetFlashdutyClientFn, readOnly bool, t transl
 	group.AddToolset(users)
 
 	// Channels toolset (2 tools)
-	channelsToolset := toolsets.NewToolset("channels", "Collaboration space and escalation rule tools").
+	channelsToolset := toolsets.NewToolset("channels", "Channel and escalation rule tools").
 		AddReadTools(
 			toolsets.NewServerTool(QueryChannels(getClient, t)),
 			toolsets.NewServerTool(QueryEscalationRules(getClient, t)),
