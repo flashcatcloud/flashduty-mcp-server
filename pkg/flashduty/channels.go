@@ -14,7 +14,7 @@ import (
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
-const queryChannelsDescription = `Query collaboration spaces (channels) by IDs or name. Returns channel info with team details.`
+const queryChannelsDescription = `Query channels by IDs or name. Returns channel info with team details.`
 
 // QueryChannels creates a tool to query channels
 func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -182,7 +182,7 @@ func QueryEscalationRules(getClient GetFlashdutyClientFn, t translations.Transla
 				Title:        t("TOOL_QUERY_ESCALATION_RULES_USER_TITLE", "Query escalation rules"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithNumber("channel_id", mcp.Required(), mcp.Description("Collaboration space (channel) ID to query escalation rules for.")),
+			mcp.WithNumber("channel_id", mcp.Required(), mcp.Description("Channel ID to query escalation rules for.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {

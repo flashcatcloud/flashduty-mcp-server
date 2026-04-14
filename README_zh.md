@@ -10,6 +10,16 @@ Flashduty MCP Server 是一个基于 [Model Context Protocol (MCP)](https://mode
 - 从 Flashduty 抽取和分析数据
 - 构建与 Flashduty 交互的 AI 工具和应用
 
+### 支持的传输协议
+
+| 协议 | 是否支持 | 说明 |
+|---|---|---|
+| **stdio** | ✅ | `flashduty-mcp-server stdio`，适用于本地 MCP 客户端（Cursor、Claude Desktop 等）。 |
+| **Streamable HTTP** | ✅ | `flashduty-mcp-server http`，对外路径：`/mcp`（推荐）与 `/flashduty`（兼容别名）。公共实例：`https://mcp.flashcat.cloud/mcp`。 |
+| **Standalone SSE（HTTP/SSE）** | ❌ | 旧版独立的 SSE 传输（独立的 `GET /sse` 端点）**不支持**。服务对 `GET` 请求返回 `405 Method Not Allowed`。请改用 Streamable HTTP——它已按 MCP 规范在 `POST` 响应中通过流式方式返回数据。 |
+
+> 如果你的 MCP 客户端只支持旧版 SSE 传输，请升级客户端或在本地改用 stdio。
+
 ---
 
 ## 远程服务

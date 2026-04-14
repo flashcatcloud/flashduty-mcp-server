@@ -23,7 +23,7 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("change_ids", mcp.Description("Comma-separated change IDs for direct lookup.")),
-			mcp.WithString("channel_ids", mcp.Description("Filter by collaboration space IDs. Comma-separated for multiple.")),
+			mcp.WithString("channel_ids", mcp.Description("Filter by channel IDs. Comma-separated for multiple.")),
 			mcp.WithNumber("start_time", mcp.Description("Query start time in Unix timestamp (seconds). Must be < end_time. Max range: 31 days. Defaults to 1 hour ago.")),
 			mcp.WithNumber("end_time", mcp.Description("Query end time in Unix timestamp (seconds). Defaults to now.")),
 			mcp.WithString("type", mcp.Description("Filter by change type.")),
