@@ -30,7 +30,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			mcp.WithString("incident_ids", mcp.Description("Comma-separated incident IDs for direct lookup. If provided, other filters are ignored.")),
 			mcp.WithString("progress", mcp.Description("Filter by status. Valid values: Triggered, Processing, Closed. Comma-separated for multiple."), mcp.Enum("Triggered", "Processing", "Closed", "Triggered,Processing", "Processing,Closed", "Triggered,Closed", "Triggered,Processing,Closed")),
 			mcp.WithString("severity", mcp.Description("Filter by severity level. Valid values: Info, Warning, Critical."), mcp.Enum("Info", "Warning", "Critical")),
-			mcp.WithNumber("channel_id", mcp.Description("Filter by collaboration space ID.")),
+			mcp.WithString("channel_ids", mcp.Description("Filter by collaboration space IDs. Comma-separated for multiple.")),
 			mcp.WithNumber("start_time", mcp.Description("Query start time in Unix timestamp (seconds). Required if no incident_ids. Must be < end_time. Max range: 31 days.")),
 			mcp.WithNumber("end_time", mcp.Description("Query end time in Unix timestamp (seconds). Required if no incident_ids. Must be within data retention period.")),
 			mcp.WithString("title", mcp.Description("Keyword search in incident title.")),
@@ -46,7 +46,8 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			incidentIdsStr, _ := OptionalParam[string](request, "incident_ids")
 			progress, _ := OptionalParam[string](request, "progress")
 			severity, _ := OptionalParam[string](request, "severity")
-			channelID, _ := OptionalInt(request, "channel_id")
+			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
+			channelIDs := parseCommaSeparatedInts(channelIdsStr)
 			startTime, _ := OptionalInt(request, "start_time")
 			endTime, _ := OptionalInt(request, "end_time")
 			title, _ := OptionalParam[string](request, "title")
@@ -75,7 +76,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				if startTime == 0 || endTime == 0 {
 					return mcp.NewToolResultError("Both start_time and end_time are required for time-based queries"), nil
 				}
-				rawIncidents, err = client.fetchIncidentsByFilters(ctx, progress, severity, channelID, startTime, endTime, title, limit)
+				rawIncidents, err = client.fetchIncidentsByFilters(ctx, progress, severity, channelIDs, startTime, endTime, title, limit)
 			}
 
 			if err != nil {
@@ -312,7 +313,7 @@ func (c *Client) fetchIncidentsByIDs(ctx context.Context, incidentIDs []string) 
 }
 
 // fetchIncidentsByFilters fetches incidents by filters
-func (c *Client) fetchIncidentsByFilters(ctx context.Context, progress, severity string, channelID int, startTime, endTime int, title string, limit int) ([]RawIncident, error) {
+func (c *Client) fetchIncidentsByFilters(ctx context.Context, progress, severity string, channelIDs []int, startTime, endTime int, title string, limit int) ([]RawIncident, error) {
 	requestBody := map[string]interface{}{
 		"p":          1,
 		"limit":      limit,
@@ -326,8 +327,8 @@ func (c *Client) fetchIncidentsByFilters(ctx context.Context, progress, severity
 	if severity != "" {
 		requestBody["incident_severity"] = severity
 	}
-	if channelID > 0 {
-		requestBody["channel_id"] = channelID
+	if len(channelIDs) > 0 {
+		requestBody["channel_ids"] = channelIDs
 	}
 	if title != "" {
 		requestBody["title"] = title
