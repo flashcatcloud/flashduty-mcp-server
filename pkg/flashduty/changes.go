@@ -23,7 +23,7 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("change_ids", mcp.Description("Comma-separated change IDs for direct lookup.")),
-			mcp.WithNumber("channel_id", mcp.Description("Filter by collaboration space ID.")),
+			mcp.WithString("channel_ids", mcp.Description("Filter by collaboration space IDs. Comma-separated for multiple.")),
 			mcp.WithNumber("start_time", mcp.Description("Query start time in Unix timestamp (seconds). Must be < end_time. Max range: 31 days. Defaults to 1 hour ago.")),
 			mcp.WithNumber("end_time", mcp.Description("Query end time in Unix timestamp (seconds). Defaults to now.")),
 			mcp.WithString("type", mcp.Description("Filter by change type.")),
@@ -35,7 +35,8 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			}
 
 			changeIdsStr, _ := OptionalParam[string](request, "change_ids")
-			channelID, _ := OptionalInt(request, "channel_id")
+			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
+			filterChannelIDs := parseCommaSeparatedInts(channelIdsStr)
 			startTime, _ := OptionalInt(request, "start_time")
 			endTime, _ := OptionalInt(request, "end_time")
 			changeType, _ := OptionalParam[string](request, "type")
@@ -54,8 +55,8 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				changeIDs := parseCommaSeparatedStrings(changeIdsStr)
 				requestBody["change_ids"] = changeIDs
 			}
-			if channelID > 0 {
-				requestBody["channel_id"] = channelID
+			if len(filterChannelIDs) > 0 {
+				requestBody["channel_ids"] = filterChannelIDs
 			}
 			if startTime > 0 {
 				requestBody["start_time"] = startTime
