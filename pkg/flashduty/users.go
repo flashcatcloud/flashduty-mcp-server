@@ -70,7 +70,7 @@ func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				"limit": defaultUsersQueryLimit,
 			}
 			if name != "" {
-				requestBody["member_name"] = name
+				requestBody["query"] = name
 			}
 			if email != "" {
 				requestBody["email"] = email
@@ -167,7 +167,7 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 				"limit": defaultUsersQueryLimit,
 			}
 			if name != "" {
-				requestBody["team_name"] = name
+				requestBody["query"] = name
 			}
 
 			resp, err := client.makeRequest(ctx, "POST", "/team/list", requestBody)
