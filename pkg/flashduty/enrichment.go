@@ -77,12 +77,14 @@ func (c *Client) fetchIncidentAlerts(ctx context.Context, incidentID string, lim
 		Data  *struct {
 			Total int `json:"total"`
 			Items []struct {
-				AlertID     string            `json:"alert_id"`
-				Title       string            `json:"title"`
-				Severity    string            `json:"severity"`
-				Status      string            `json:"status"`
-				TriggerTime int64             `json:"trigger_time"`
-				Labels      map[string]string `json:"labels,omitempty"`
+				AlertID         string            `json:"alert_id"`
+				Title           string            `json:"title"`
+				Severity        string            `json:"severity"`
+				Status          string            `json:"status"`
+				TriggerTime     int64             `json:"trigger_time"`
+				IntegrationType string            `json:"integration_type,omitempty"`
+				IntegrationName string            `json:"integration_name,omitempty"`
+				Labels          map[string]string `json:"labels,omitempty"`
 			} `json:"items"`
 		} `json:"data,omitempty"`
 	}
@@ -100,12 +102,14 @@ func (c *Client) fetchIncidentAlerts(ctx context.Context, incidentID string, lim
 	alerts := make([]AlertPreview, 0, len(result.Data.Items))
 	for _, item := range result.Data.Items {
 		alerts = append(alerts, AlertPreview{
-			AlertID:   item.AlertID,
-			Title:     item.Title,
-			Severity:  item.Severity,
-			Status:    item.Status,
-			StartTime: item.TriggerTime,
-			Labels:    item.Labels,
+			AlertID:         item.AlertID,
+			Title:           item.Title,
+			Severity:        item.Severity,
+			Status:          item.Status,
+			StartTime:       item.TriggerTime,
+			IntegrationType: item.IntegrationType,
+			IntegrationName: item.IntegrationName,
+			Labels:          item.Labels,
 		})
 	}
 	return alerts, result.Data.Total, nil
