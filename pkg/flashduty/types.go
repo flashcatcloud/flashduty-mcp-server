@@ -67,8 +67,8 @@ type AlertPreview struct {
 	Severity       string            `json:"severity" toon:"severity"`
 	Status         string            `json:"status" toon:"status"`
 	StartTime      int64             `json:"start_time" toon:"start_time"`
-	DataSourceType string            `json:"data_source_type,omitempty" toon:"data_source_type,omitempty"`
-	DataSourceName string            `json:"data_source_name,omitempty" toon:"data_source_name,omitempty"`
+	IntegrationType string            `json:"integration_type,omitempty" toon:"integration_type,omitempty"`
+	IntegrationName string            `json:"integration_name,omitempty" toon:"integration_name,omitempty"`
 	Labels         map[string]string `json:"labels,omitempty" toon:"labels,omitempty"`
 }
 

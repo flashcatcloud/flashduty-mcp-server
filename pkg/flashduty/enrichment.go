@@ -82,8 +82,8 @@ func (c *Client) fetchIncidentAlerts(ctx context.Context, incidentID string, lim
 				Severity       string            `json:"severity"`
 				Status         string            `json:"status"`
 				TriggerTime    int64             `json:"trigger_time"`
-				DataSourceType string            `json:"data_source_type,omitempty"`
-				DataSourceName string            `json:"data_source_name,omitempty"`
+				IntegrationType string            `json:"integration_type,omitempty"`
+				IntegrationName string            `json:"integration_name,omitempty"`
 				Labels         map[string]string `json:"labels,omitempty"`
 			} `json:"items"`
 		} `json:"data,omitempty"`
@@ -107,8 +107,8 @@ func (c *Client) fetchIncidentAlerts(ctx context.Context, incidentID string, lim
 			Severity:       item.Severity,
 			Status:         item.Status,
 			StartTime:      item.TriggerTime,
-			DataSourceType: item.DataSourceType,
-			DataSourceName: item.DataSourceName,
+			IntegrationType: item.IntegrationType,
+			IntegrationName: item.IntegrationName,
 			Labels:         item.Labels,
 		})
 	}

@@ -9,25 +9,25 @@ import (
 	"time"
 )
 
-// TestAlertPreview_CarriesDataSourceFields asserts the preview struct now
-// carries data_source_type/data_source_name; AI-SRE depends on both to route
+// TestAlertPreview_CarriesIntegrationFields asserts the preview struct now
+// carries integration_type/integration_name; AI-SRE depends on both to route
 // /monit/query/rows calls.
-func TestAlertPreview_CarriesDataSourceFields(t *testing.T) {
+func TestAlertPreview_CarriesIntegrationFields(t *testing.T) {
 	ap := AlertPreview{
-		AlertID:        "a1",
-		Title:          "CPU high",
-		Severity:       "Critical",
-		Status:         "Triggered",
-		StartTime:      1775912219,
-		DataSourceType: "prometheus",
-		DataSourceName: "prom-10.99.1.107",
-		Labels:         map[string]string{"resource": "web-server-01"},
+		AlertID:         "a1",
+		Title:           "CPU high",
+		Severity:        "Critical",
+		Status:          "Triggered",
+		StartTime:       1775912219,
+		IntegrationType: "prometheus",
+		IntegrationName: "prom-10.99.1.107",
+		Labels:          map[string]string{"resource": "web-server-01"},
 	}
-	if ap.DataSourceType != "prometheus" {
-		t.Fatalf("DataSourceType lost: %q", ap.DataSourceType)
+	if ap.IntegrationType != "prometheus" {
+		t.Fatalf("IntegrationType lost: %q", ap.IntegrationType)
 	}
-	if ap.DataSourceName != "prom-10.99.1.107" {
-		t.Fatalf("DataSourceName lost: %q", ap.DataSourceName)
+	if ap.IntegrationName != "prom-10.99.1.107" {
+		t.Fatalf("IntegrationName lost: %q", ap.IntegrationName)
 	}
 }
 
@@ -48,11 +48,11 @@ func newTestClient(t *testing.T, baseURL string) *Client {
 	}
 }
 
-// TestFetchIncidentAlerts_PreservesDataSourceFields asserts that when the
-// upstream /incident/alert/list response carries data_source_type /
-// data_source_name, fetchIncidentAlerts's projection to AlertPreview
+// TestFetchIncidentAlerts_PreservesIntegrationFields asserts that when the
+// upstream /incident/alert/list response carries integration_type /
+// integration_name, fetchIncidentAlerts's projection to AlertPreview
 // keeps both — they are the two fields AI-SRE depends on.
-func TestFetchIncidentAlerts_PreservesDataSourceFields(t *testing.T) {
+func TestFetchIncidentAlerts_PreservesIntegrationFields(t *testing.T) {
 	upstream := `{
       "data": {
         "total": 1,
@@ -62,8 +62,8 @@ func TestFetchIncidentAlerts_PreservesDataSourceFields(t *testing.T) {
           "severity": "Critical",
           "status": "Triggered",
           "trigger_time": 1775912219,
-          "data_source_type": "prometheus",
-          "data_source_name": "prom-10.99.1.107",
+          "integration_type": "prometheus",
+          "integration_name": "prom-10.99.1.107",
           "labels": {"resource":"web-server-01"}
         }]
       }
@@ -83,10 +83,10 @@ func TestFetchIncidentAlerts_PreservesDataSourceFields(t *testing.T) {
 	if total != 1 || len(alerts) != 1 {
 		t.Fatalf("unexpected alerts: total=%d len=%d", total, len(alerts))
 	}
-	if alerts[0].DataSourceType != "prometheus" {
-		t.Fatalf("DataSourceType=%q, want prometheus", alerts[0].DataSourceType)
+	if alerts[0].IntegrationType != "prometheus" {
+		t.Fatalf("IntegrationType=%q, want prometheus", alerts[0].IntegrationType)
 	}
-	if alerts[0].DataSourceName != "prom-10.99.1.107" {
-		t.Fatalf("DataSourceName=%q, want prom-10.99.1.107", alerts[0].DataSourceName)
+	if alerts[0].IntegrationName != "prom-10.99.1.107" {
+		t.Fatalf("IntegrationName=%q, want prom-10.99.1.107", alerts[0].IntegrationName)
 	}
 }
