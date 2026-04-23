@@ -62,12 +62,14 @@ type TimelineEvent struct {
 
 // AlertPreview represents a preview of an alert
 type AlertPreview struct {
-	AlertID   string            `json:"alert_id" toon:"alert_id"`
-	Title     string            `json:"title" toon:"title"`
-	Severity  string            `json:"severity" toon:"severity"`
-	Status    string            `json:"status" toon:"status"`
-	StartTime int64             `json:"start_time" toon:"start_time"`
-	Labels    map[string]string `json:"labels,omitempty" toon:"labels,omitempty"`
+	AlertID        string            `json:"alert_id" toon:"alert_id"`
+	Title          string            `json:"title" toon:"title"`
+	Severity       string            `json:"severity" toon:"severity"`
+	Status         string            `json:"status" toon:"status"`
+	StartTime      int64             `json:"start_time" toon:"start_time"`
+	DataSourceType string            `json:"data_source_type,omitempty" toon:"data_source_type,omitempty"`
+	DataSourceName string            `json:"data_source_name,omitempty" toon:"data_source_name,omitempty"`
+	Labels         map[string]string `json:"labels,omitempty" toon:"labels,omitempty"`
 }
 
 // PersonInfo represents person information from /person/infos API
