@@ -23,8 +23,8 @@ func QueryAlerts(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 				Title:        t("TOOL_QUERY_ALERTS_USER_TITLE", "Query alerts"),
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
-			mcp.WithString("since", mcp.Required(), mcp.Description("Lower bound of the query window. Accepts: relative duration like \"24h\", \"7d\", \"30m\" (interpreted as now minus duration); absolute date \"2026-04-01\"; datetime \"2026-04-01 10:00:00\"; unix seconds \"1712000000\"; or \"now\". Required.")),
-			mcp.WithString("until", mcp.Required(), mcp.Description("Upper bound of the query window. Same formats as since, plus future durations like \"+24h\". Use \"now\" for current time. Required.")),
+			WithSince(mcp.Required()),
+			WithUntil(mcp.Required()),
 			mcp.WithString("severity", mcp.Description("Filter by alert severity."), mcp.Enum("Info", "Warning", "Critical")),
 			mcp.WithBoolean("is_active", mcp.Description("If true, only return alerts that are currently active (Triggered or Processing). If false, only inactive (Closed). If omitted, returns all.")),
 			mcp.WithString("channel_ids", mcp.Description("Comma-separated collaboration space IDs to filter by.")),
@@ -50,8 +50,8 @@ func QueryAlerts(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("invalid until: %v", err)), nil
 			}
-			if startTime == 0 || endTime == 0 {
-				return mcp.NewToolResultError("Both since and until are required"), nil
+			if err := validateTimeWindow(startTime, endTime); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			severity, _ := OptionalParam[string](request, "severity")

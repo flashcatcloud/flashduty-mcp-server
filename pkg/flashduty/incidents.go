@@ -30,8 +30,8 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			mcp.WithString("progress", mcp.Description("Filter by status. Valid values: Triggered, Processing, Closed. Comma-separated for multiple."), mcp.Enum("Triggered", "Processing", "Closed", "Triggered,Processing", "Processing,Closed", "Triggered,Closed", "Triggered,Processing,Closed")),
 			mcp.WithString("severity", mcp.Description("Filter by severity level. Valid values: Info, Warning, Critical."), mcp.Enum("Info", "Warning", "Critical")),
 			mcp.WithString("channel_ids", mcp.Description("Comma-separated collaboration space IDs to filter by. Backend expects an array — singular channel_id is silently ignored.")),
-			mcp.WithString("since", mcp.Description("Lower bound of the query window. Accepts: relative duration like \"24h\", \"7d\", \"30m\" (interpreted as now minus duration); absolute date \"2026-04-01\"; datetime \"2026-04-01 10:00:00\"; unix seconds \"1712000000\"; or \"now\". Required if no incident_ids. Max range: 31 days.")),
-			mcp.WithString("until", mcp.Description("Upper bound of the query window. Same formats as since, plus future durations like \"+24h\", \"+7d\". Defaults to \"now\" when omitted. Required if no incident_ids.")),
+			WithSince(),
+			WithUntil(),
 			mcp.WithString("title", mcp.Description("Keyword search in incident title.")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 			mcp.WithBoolean("include_alerts", mcp.Description("Whether to include alerts preview (first 20 alerts with total count)."), mcp.DefaultBool(true)),
@@ -95,8 +95,8 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 					return mcp.NewToolResultError("incident_ids must contain at least one valid ID when specified"), nil
 				}
 				input.IncidentIDs = incidentIDs
-			} else if startTime == 0 || endTime == 0 {
-				return mcp.NewToolResultError("Both since and until are required for time-based queries"), nil
+			} else if err := validateTimeWindow(startTime, endTime); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			output, err := client.ListIncidents(ctx, input)

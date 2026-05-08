@@ -3,6 +3,7 @@ package flashduty
 import (
 	"context"
 	"fmt"
+	"time"
 
 	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -24,8 +25,8 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			}),
 			mcp.WithString("change_ids", mcp.Description("Comma-separated change IDs for direct lookup.")),
 			mcp.WithString("channel_ids", mcp.Description("Comma-separated collaboration space IDs to filter by. Backend expects an array — singular channel_id is silently ignored.")),
-			mcp.WithString("since", mcp.Description("Lower bound of the query window. Accepts: relative duration like \"1h\", \"24h\", \"7d\" (interpreted as now minus duration); absolute date \"2026-04-01\"; datetime \"2026-04-01 10:00:00\"; unix seconds \"1712000000\"; or \"now\". Defaults to 1 hour ago. Max range: 31 days.")),
-			mcp.WithString("until", mcp.Description("Upper bound of the query window. Same formats as since, plus future durations like \"+24h\". Defaults to \"now\".")),
+			WithSince(),
+			WithUntil(),
 			mcp.WithString("type", mcp.Description("Filter by change type.")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -51,6 +52,17 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			endTime, err := timeutil.ParseAny(args["until"])
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("invalid until: %v", err)), nil
+			}
+			// Honor the "defaults to last hour" contract advertised in the old
+			// description: backend rejects 0/0, so we have to apply it ourselves.
+			if endTime == 0 {
+				endTime = time.Now().Unix()
+			}
+			if startTime == 0 {
+				startTime = endTime - 3600
+			}
+			if err := validateTimeWindow(startTime, endTime); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			input := &sdk.ListChangesInput{
