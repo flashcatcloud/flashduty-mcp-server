@@ -55,10 +55,10 @@ func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHel
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve channels: %v", err)), nil
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalResult(addTruncationHint(map[string]any{
 				"channels": output.Channels,
 				"total":    output.Total,
-			}), nil
+			}, len(output.Channels), output.Total)), nil
 		}
 }
 
@@ -89,9 +89,9 @@ func QueryEscalationRules(getClient GetFlashdutyClientFn, t translations.Transla
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to query escalation rules: %v", err)), nil
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalResult(addTruncationHint(map[string]any{
 				"rules": output.Rules,
 				"total": output.Total,
-			}), nil
+			}, len(output.Rules), output.Total)), nil
 		}
 }

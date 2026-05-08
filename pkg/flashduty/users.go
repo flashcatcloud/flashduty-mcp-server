@@ -56,15 +56,17 @@ func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve members: %v", err)), nil
 			}
 
-			members := any(output.Members)
+			var members any = output.Members
+			count := len(output.Members)
 			if len(output.PersonInfos) > 0 {
 				members = output.PersonInfos
+				count = len(output.PersonInfos)
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalResult(addTruncationHint(map[string]any{
 				"members": members,
 				"total":   output.Total,
-			}), nil
+			}, count, output.Total)), nil
 		}
 }
 
@@ -117,9 +119,9 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 				}), nil
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalResult(addTruncationHint(map[string]any{
 				"teams": output.Teams,
 				"total": output.Total,
-			}), nil
+			}, len(output.Teams), output.Total)), nil
 		}
 }

@@ -90,10 +90,10 @@ func ListStatusChanges(getClient GetFlashdutyClientFn, t translations.Translatio
 				return mcp.NewToolResultError(fmt.Sprintf("failed to list status changes: %v", err)), nil
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalResult(addTruncationHint(map[string]any{
 				"changes": output.Changes,
 				"total":   output.Total,
-			}), nil
+			}, len(output.Changes), output.Total)), nil
 		}
 }
 

@@ -45,9 +45,9 @@ func QueryFields(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve fields: %v", err)), nil
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalResult(addTruncationHint(map[string]any{
 				"fields": output.Fields,
 				"total":  output.Total,
-			}), nil
+			}, len(output.Fields), output.Total)), nil
 		}
 }

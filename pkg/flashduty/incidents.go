@@ -33,7 +33,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			WithSince(),
 			WithUntil(),
 			mcp.WithString("title", mcp.Description("Keyword search in incident title.")),
-			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 			mcp.WithBoolean("include_alerts", mcp.Description("Whether to include alerts preview (first 20 alerts with total count)."), mcp.DefaultBool(true)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
@@ -104,10 +104,10 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve incidents: %v", err)), nil
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalResult(addTruncationHint(map[string]any{
 				"incidents": output.Incidents,
 				"total":     output.Total,
-			}), nil
+			}, len(output.Incidents), output.Total)), nil
 		}
 }
 
@@ -456,9 +456,9 @@ func ListSimilarIncidents(getClient GetFlashdutyClientFn, t translations.Transla
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to find similar incidents: %v", err)), nil
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalResult(addTruncationHint(map[string]any{
 				"incidents": output.Incidents,
 				"total":     output.Total,
-			}), nil
+			}, len(output.Incidents), output.Total)), nil
 		}
 }
