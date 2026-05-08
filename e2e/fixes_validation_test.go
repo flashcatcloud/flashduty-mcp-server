@@ -23,8 +23,8 @@ func TestQueryIncidentsChannelFilter(t *testing.T) {
 	startTime := now - 30*24*60*60
 
 	allText := callTool(t, mcpClient, "query_incidents", map[string]any{
-		"start_time":     strconv.FormatInt(startTime, 10),
-		"end_time":       strconv.FormatInt(now, 10),
+		"since":          strconv.FormatInt(startTime, 10),
+		"until":          strconv.FormatInt(now, 10),
 		"limit":          100,
 		"include_alerts": false,
 	})
@@ -59,8 +59,8 @@ func TestQueryIncidentsChannelFilter(t *testing.T) {
 		target, maxCount, otherChannelCount)
 
 	filteredText := callTool(t, mcpClient, "query_incidents", map[string]any{
-		"start_time":     strconv.FormatInt(startTime, 10),
-		"end_time":       strconv.FormatInt(now, 10),
+		"since":          strconv.FormatInt(startTime, 10),
+		"until":          strconv.FormatInt(now, 10),
 		"limit":          100,
 		"include_alerts": false,
 		"channel_ids":    strconv.FormatInt(target, 10),

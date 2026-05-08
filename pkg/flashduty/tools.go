@@ -6,7 +6,7 @@ import (
 )
 
 // DefaultTools is the default list of enabled Flashduty toolsets
-var DefaultTools = []string{"incidents", "changes", "status_page", "users", "channels", "fields", "templates"}
+var DefaultTools = []string{"incidents", "alerts", "changes", "status_page", "users", "channels", "fields", "templates"}
 
 // DefaultToolsetGroup returns the default toolset group for Flashduty
 func DefaultToolsetGroup(getClient GetFlashdutyClientFn, readOnly bool, t translations.TranslationHelperFunc) *toolsets.ToolsetGroup {
@@ -27,6 +27,14 @@ func DefaultToolsetGroup(getClient GetFlashdutyClientFn, readOnly bool, t transl
 			toolsets.NewServerTool(CloseIncident(getClient, t)),
 		)
 	group.AddToolset(incidents)
+
+	// Alerts toolset (2 tools)
+	alerts := toolsets.NewToolset("alerts", "Alert query tools").
+		AddReadTools(
+			toolsets.NewServerTool(QueryAlerts(getClient, t)),
+			toolsets.NewServerTool(QueryAlertEvents(getClient, t)),
+		)
+	group.AddToolset(alerts)
 
 	// Changes toolset (1 tool)
 	changes := toolsets.NewToolset("changes", "Change record query tools").
