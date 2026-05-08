@@ -8,6 +8,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/flashcatcloud/flashduty-mcp-server/internal/timeutil"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
@@ -162,7 +163,7 @@ func CreateChangeTimeline(getClient GetFlashdutyClientFn, t translations.Transla
 			mcp.WithNumber("page_id", mcp.Required(), mcp.Description("Status page ID.")),
 			mcp.WithNumber("change_id", mcp.Required(), mcp.Description("Change event ID (incident or maintenance) to update.")),
 			mcp.WithString("message", mcp.Required(), mcp.Description("Update message describing the timeline entry.")),
-			mcp.WithNumber("at", mcp.Description("Timestamp for update in Unix seconds. Defaults to current time.")),
+			mcp.WithString("at", mcp.Description("Timestamp for update. Accepts: relative duration like \"5m\" (interpreted as now minus duration); absolute date \"2026-04-01\"; datetime \"2026-04-01 10:00:00\"; unix seconds \"1712000000\"; or \"now\". Defaults to current time when omitted.")),
 			mcp.WithString("status", mcp.Description("New status. For incidents: investigating, identified, monitoring, resolved. For maintenances: scheduled, ongoing, completed.")),
 			mcp.WithString("component_changes", mcp.Description("JSON array of component status changes. Format: [{\"component_id\":\"xxx\",\"status\":\"degraded\"}]. Valid statuses: operational, degraded, partial_outage, full_outage.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -186,15 +187,24 @@ func CreateChangeTimeline(getClient GetFlashdutyClientFn, t translations.Transla
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			at, _ := OptionalInt(request, "at")
+			atStr, _ := OptionalParam[string](request, "at")
 			status, _ := OptionalParam[string](request, "status")
 			componentChanges, _ := OptionalParam[string](request, "component_changes")
+
+			var atSeconds int64
+			if atStr != "" {
+				v, err := timeutil.Parse(atStr)
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("invalid at: %v", err)), nil
+				}
+				atSeconds = v
+			}
 
 			err = client.CreateChangeTimeline(ctx, &sdk.CreateChangeTimelineInput{
 				PageID:           int64(pageID),
 				ChangeID:         int64(changeID),
 				Message:          message,
-				AtSeconds:        int64(at),
+				AtSeconds:        atSeconds,
 				Status:           status,
 				ComponentChanges: componentChanges,
 			})

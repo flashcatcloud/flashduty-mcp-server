@@ -8,6 +8,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/flashcatcloud/flashduty-mcp-server/internal/timeutil"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
@@ -22,9 +23,9 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("change_ids", mcp.Description("Comma-separated change IDs for direct lookup.")),
-			mcp.WithNumber("channel_id", mcp.Description("Filter by collaboration space ID.")),
-			mcp.WithNumber("start_time", mcp.Description("Query start time in Unix timestamp (seconds). Must be < end_time. Max range: 31 days. Defaults to 1 hour ago.")),
-			mcp.WithNumber("end_time", mcp.Description("Query end time in Unix timestamp (seconds). Defaults to now.")),
+			mcp.WithString("channel_ids", mcp.Description("Comma-separated collaboration space IDs to filter by. Backend expects an array — singular channel_id is silently ignored.")),
+			mcp.WithString("start_time", mcp.Description("Query start time. Accepts: relative duration like \"1h\", \"24h\", \"7d\" (interpreted as now minus duration); absolute date \"2026-04-01\"; datetime \"2026-04-01 10:00:00\"; unix seconds \"1712000000\"; or \"now\". Defaults to 1 hour ago. Max range: 31 days.")),
+			mcp.WithString("end_time", mcp.Description("Query end time. Same formats as start_time, plus future durations like \"+24h\". Defaults to \"now\".")),
 			mcp.WithString("type", mcp.Description("Filter by change type.")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -34,9 +35,9 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			}
 
 			changeIdsStr, _ := OptionalParam[string](request, "change_ids")
-			channelID, _ := OptionalInt(request, "channel_id")
-			startTime, _ := OptionalInt(request, "start_time")
-			endTime, _ := OptionalInt(request, "end_time")
+			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
+			startTimeStr, _ := OptionalParam[string](request, "start_time")
+			endTimeStr, _ := OptionalParam[string](request, "end_time")
 			changeType, _ := OptionalParam[string](request, "type")
 			limit, _ := OptionalInt(request, "limit")
 
@@ -44,16 +45,42 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				limit = 20
 			}
 
+			var startTime, endTime int64
+			if startTimeStr != "" {
+				v, err := timeutil.Parse(startTimeStr)
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("invalid start_time: %v", err)), nil
+				}
+				startTime = v
+			}
+			if endTimeStr != "" {
+				v, err := timeutil.Parse(endTimeStr)
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("invalid end_time: %v", err)), nil
+				}
+				endTime = v
+			}
+
 			input := &sdk.ListChangesInput{
-				ChannelID: int64(channelID),
-				StartTime: int64(startTime),
-				EndTime:   int64(endTime),
+				StartTime: startTime,
+				EndTime:   endTime,
 				Type:      changeType,
 				Limit:     limit,
 			}
 
 			if changeIdsStr != "" {
 				input.ChangeIDs = parseCommaSeparatedStrings(changeIdsStr)
+			}
+
+			if channelIdsStr != "" {
+				channelIDs := parseCommaSeparatedInts(channelIdsStr)
+				if len(channelIDs) == 0 {
+					return mcp.NewToolResultError("channel_ids must contain at least one valid ID when specified"), nil
+				}
+				input.ChannelIDs = make([]int64, len(channelIDs))
+				for i, id := range channelIDs {
+					input.ChannelIDs[i] = int64(id)
+				}
 			}
 
 			output, err := client.ListChanges(ctx, input)

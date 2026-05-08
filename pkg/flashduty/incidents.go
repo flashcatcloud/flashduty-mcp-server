@@ -10,6 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/flashcatcloud/flashduty-mcp-server/internal/timeutil"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
@@ -28,9 +29,9 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			mcp.WithString("incident_ids", mcp.Description("Comma-separated incident IDs for direct lookup. If provided, other filters are ignored.")),
 			mcp.WithString("progress", mcp.Description("Filter by status. Valid values: Triggered, Processing, Closed. Comma-separated for multiple."), mcp.Enum("Triggered", "Processing", "Closed", "Triggered,Processing", "Processing,Closed", "Triggered,Closed", "Triggered,Processing,Closed")),
 			mcp.WithString("severity", mcp.Description("Filter by severity level. Valid values: Info, Warning, Critical."), mcp.Enum("Info", "Warning", "Critical")),
-			mcp.WithNumber("channel_id", mcp.Description("Filter by collaboration space ID.")),
-			mcp.WithNumber("start_time", mcp.Description("Query start time in Unix timestamp (seconds). Required if no incident_ids. Must be < end_time. Max range: 31 days.")),
-			mcp.WithNumber("end_time", mcp.Description("Query end time in Unix timestamp (seconds). Required if no incident_ids. Must be within data retention period.")),
+			mcp.WithString("channel_ids", mcp.Description("Comma-separated collaboration space IDs to filter by. Backend expects an array — singular channel_id is silently ignored.")),
+			mcp.WithString("start_time", mcp.Description("Query start time. Accepts: relative duration like \"24h\", \"7d\", \"30m\" (interpreted as now minus duration); absolute date \"2026-04-01\"; datetime \"2026-04-01 10:00:00\"; unix seconds \"1712000000\"; or \"now\". Required if no incident_ids. Max range: 31 days.")),
+			mcp.WithString("end_time", mcp.Description("Query end time. Same formats as start_time, plus future durations like \"+24h\", \"+7d\". Defaults to \"now\" when omitted. Required if no incident_ids.")),
 			mcp.WithString("title", mcp.Description("Keyword search in incident title.")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 			mcp.WithBoolean("include_alerts", mcp.Description("Whether to include alerts preview (first 20 alerts with total count)."), mcp.DefaultBool(true)),
@@ -44,11 +45,27 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			incidentIdsStr, _ := OptionalParam[string](request, "incident_ids")
 			progress, _ := OptionalParam[string](request, "progress")
 			severity, _ := OptionalParam[string](request, "severity")
-			channelID, _ := OptionalInt(request, "channel_id")
-			startTime, _ := OptionalInt(request, "start_time")
-			endTime, _ := OptionalInt(request, "end_time")
+			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
+			startTimeStr, _ := OptionalParam[string](request, "start_time")
+			endTimeStr, _ := OptionalParam[string](request, "end_time")
 			title, _ := OptionalParam[string](request, "title")
 			limit, _ := OptionalInt(request, "limit")
+
+			var startTime, endTime int64
+			if startTimeStr != "" {
+				v, err := timeutil.Parse(startTimeStr)
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("invalid start_time: %v", err)), nil
+				}
+				startTime = v
+			}
+			if endTimeStr != "" {
+				v, err := timeutil.Parse(endTimeStr)
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("invalid end_time: %v", err)), nil
+				}
+				endTime = v
+			}
 
 			// Default include_alerts to true if not explicitly set to false
 			includeAlerts := true
@@ -60,16 +77,25 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				limit = defaultQueryLimit
 			}
 
-			// Build SDK input
 			input := &sdk.ListIncidentsInput{
 				Progress:      progress,
 				Severity:      severity,
-				ChannelID:     int64(channelID),
-				StartTime:     int64(startTime),
-				EndTime:       int64(endTime),
+				StartTime:     startTime,
+				EndTime:       endTime,
 				Title:         title,
 				Limit:         limit,
 				IncludeAlerts: includeAlerts,
+			}
+
+			if channelIdsStr != "" {
+				channelIDs := parseCommaSeparatedInts(channelIdsStr)
+				if len(channelIDs) == 0 {
+					return mcp.NewToolResultError("channel_ids must contain at least one valid ID when specified"), nil
+				}
+				input.ChannelIDs = make([]int64, len(channelIDs))
+				for i, id := range channelIDs {
+					input.ChannelIDs[i] = int64(id)
+				}
 			}
 
 			if incidentIdsStr != "" {
