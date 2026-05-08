@@ -3,9 +3,8 @@ package flashduty
 import (
 	"fmt"
 
-	"github.com/mark3labs/mcp-go/mcp"
-
 	sdk "github.com/flashcatcloud/flashduty-sdk"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // OutputFormat is a type alias for the SDK's OutputFormat.

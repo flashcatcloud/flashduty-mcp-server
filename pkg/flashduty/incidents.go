@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -290,12 +291,28 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 
 			// Parse custom fields JSON if provided
 			if customFieldsStr != "" {
+				customFieldsStr = strings.TrimSpace(customFieldsStr)
+				if customFieldsStr == "" {
+					return mcp.NewToolResultError("custom_fields must be a valid JSON object, not empty"), nil
+				}
 				var customFields map[string]any
 				if err := json.Unmarshal([]byte(customFieldsStr), &customFields); err != nil {
 					return mcp.NewToolResultError(fmt.Sprintf("custom_fields must be a valid JSON object: %v", err)), nil
 				}
 				if len(customFields) == 0 {
 					return mcp.NewToolResultError("custom_fields must contain at least one field"), nil
+				}
+				// Validate field names locally so users get fast, clear errors before round-tripping to the API.
+				for fieldName := range customFields {
+					if fieldName == "" {
+						return mcp.NewToolResultError("custom_fields contains an empty field name"), nil
+					}
+					for _, c := range fieldName {
+						isValid := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+						if !isValid {
+							return mcp.NewToolResultError(fmt.Sprintf("custom field name '%s' contains invalid characters (only alphanumeric and underscore allowed)", fieldName)), nil
+						}
+					}
 				}
 				input.CustomFields = customFields
 			}

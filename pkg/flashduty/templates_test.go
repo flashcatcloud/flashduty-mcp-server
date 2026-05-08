@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 	sdk "github.com/flashcatcloud/flashduty-sdk"
+
+	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
 func TestGetPresetTemplateSchemaDoesNotExposeLocale(t *testing.T) {

@@ -5,13 +5,17 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"reflect"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
-func TestNewStreamableHTTPServer_DoesNotDisableStreaming(t *testing.T) {
+// TestNewStreamableHTTPServer_RejectsSSEGet asserts that GET requests are
+// rejected with 405. Without WithDisableStreaming, mcp-go's standalone SSE
+// handler creates an orphan session and hangs indefinitely.
+func TestNewStreamableHTTPServer_RejectsSSEGet(t *testing.T) {
 	t.Parallel()
 
 	mcpServer, err := NewMCPServer(FlashdutyConfig{
@@ -31,11 +35,23 @@ func TestNewStreamableHTTPServer_DoesNotDisableStreaming(t *testing.T) {
 		},
 	)
 
-	value := reflect.ValueOf(httpServer).Elem().FieldByName("disableStreaming")
-	if !value.IsValid() {
-		t.Fatal("expected streamable HTTP server to expose disableStreaming field")
+	ts := httptest.NewServer(httpServer)
+	defer ts.Close()
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
 	}
-	if value.Bool() {
-		t.Fatal("expected streaming to remain enabled for GET/SSE clients")
+	req.Header.Set("Accept", "text/event-stream")
+
+	client := &http.Client{Timeout: 2 * time.Second} // must not hang
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("GET request failed (likely SSE hang): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 Method Not Allowed for SSE GET, got %d", resp.StatusCode)
 	}
 }

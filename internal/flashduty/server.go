@@ -14,10 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 
 	pkgerrors "github.com/flashcatcloud/flashduty-mcp-server/pkg/errors"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
@@ -151,6 +150,10 @@ func newStreamableHTTPServer(mcpServer *server.MCPServer, logger *slog.Logger, c
 	return server.NewStreamableHTTPServer(
 		mcpServer,
 		server.WithLogger(&slogAdapter{logger: logger}),
+		// Return 405 for GET requests — this server doesn't use server-initiated
+		// features (sampling, elicitation). Without this, the SDK's standalone SSE
+		// GET hangs indefinitely because mcp-go creates an orphan session and blocks.
+		server.WithDisableStreaming(true),
 		server.WithHTTPContextFunc(contextFunc),
 	)
 }

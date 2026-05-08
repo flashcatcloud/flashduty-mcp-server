@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 	mcpClient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/flashcatcloud/flashduty-mcp-server/internal/flashduty"
 	pkgflashduty "github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
