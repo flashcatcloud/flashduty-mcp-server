@@ -1,13 +1,13 @@
 module github.com/flashcatcloud/flashduty-mcp-server
 
-go 1.24.4
+go 1.25.5
 
 require (
 	github.com/bluele/gcache v0.0.2
 	github.com/flashcatcloud/flashduty-sdk v0.8.0
 	github.com/google/go-github/v72 v72.0.0
 	github.com/josephburnett/jd v1.9.2
-	github.com/mark3labs/mcp-go v0.48.0
+	github.com/mark3labs/mcp-go v0.52.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.10.0
@@ -21,6 +21,7 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yudai/golcs v0.0.0-20170316035057-ecda9a501e82 // indirect
