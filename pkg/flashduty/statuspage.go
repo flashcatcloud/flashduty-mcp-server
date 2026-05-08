@@ -187,17 +187,12 @@ func CreateChangeTimeline(getClient GetFlashdutyClientFn, t translations.Transla
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			atStr, _ := OptionalParam[string](request, "at")
 			status, _ := OptionalParam[string](request, "status")
 			componentChanges, _ := OptionalParam[string](request, "component_changes")
 
-			var atSeconds int64
-			if atStr != "" {
-				v, err := timeutil.Parse(atStr)
-				if err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("invalid at: %v", err)), nil
-				}
-				atSeconds = v
+			atSeconds, err := timeutil.ParseAny(request.GetArguments()["at"])
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid at: %v", err)), nil
 			}
 
 			err = client.CreateChangeTimeline(ctx, &sdk.CreateChangeTimelineInput{

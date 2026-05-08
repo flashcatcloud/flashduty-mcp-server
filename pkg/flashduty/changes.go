@@ -34,10 +34,9 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				return nil, fmt.Errorf("failed to get Flashduty client: %w", err)
 			}
 
+			args := request.GetArguments()
 			changeIdsStr, _ := OptionalParam[string](request, "change_ids")
 			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
-			startTimeStr, _ := OptionalParam[string](request, "start_time")
-			endTimeStr, _ := OptionalParam[string](request, "end_time")
 			changeType, _ := OptionalParam[string](request, "type")
 			limit, _ := OptionalInt(request, "limit")
 
@@ -45,20 +44,13 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				limit = 20
 			}
 
-			var startTime, endTime int64
-			if startTimeStr != "" {
-				v, err := timeutil.Parse(startTimeStr)
-				if err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("invalid start_time: %v", err)), nil
-				}
-				startTime = v
+			startTime, err := timeutil.ParseAny(args["start_time"])
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid start_time: %v", err)), nil
 			}
-			if endTimeStr != "" {
-				v, err := timeutil.Parse(endTimeStr)
-				if err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("invalid end_time: %v", err)), nil
-				}
-				endTime = v
+			endTime, err := timeutil.ParseAny(args["end_time"])
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid end_time: %v", err)), nil
 			}
 
 			input := &sdk.ListChangesInput{

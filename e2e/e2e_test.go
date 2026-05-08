@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -419,8 +420,8 @@ func TestQueryIncidents(t *testing.T) {
 
 	t.Log("Querying incidents from the last 7 days...")
 	responseText := callTool(t, mcpClient, "query_incidents", map[string]any{
-		"start_time":     startTime,
-		"end_time":       now,
+		"start_time":     strconv.FormatInt(startTime, 10),
+		"end_time":       strconv.FormatInt(now, 10),
 		"limit":          10,
 		"include_alerts": false,
 	})
@@ -531,8 +532,8 @@ func TestQueryChanges(t *testing.T) {
 
 	t.Log("Querying changes from the last 7 days...")
 	responseText := callTool(t, mcpClient, "query_changes", map[string]any{
-		"start_time": startTime,
-		"end_time":   now,
+		"start_time": strconv.FormatInt(startTime, 10),
+		"end_time":   strconv.FormatInt(now, 10),
 		"limit":      10,
 	})
 

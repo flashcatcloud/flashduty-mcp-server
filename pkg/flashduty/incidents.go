@@ -46,30 +46,21 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			progress, _ := OptionalParam[string](request, "progress")
 			severity, _ := OptionalParam[string](request, "severity")
 			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
-			startTimeStr, _ := OptionalParam[string](request, "start_time")
-			endTimeStr, _ := OptionalParam[string](request, "end_time")
+			args := request.GetArguments()
 			title, _ := OptionalParam[string](request, "title")
 			limit, _ := OptionalInt(request, "limit")
 
-			var startTime, endTime int64
-			if startTimeStr != "" {
-				v, err := timeutil.Parse(startTimeStr)
-				if err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("invalid start_time: %v", err)), nil
-				}
-				startTime = v
+			startTime, err := timeutil.ParseAny(args["start_time"])
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid start_time: %v", err)), nil
 			}
-			if endTimeStr != "" {
-				v, err := timeutil.Parse(endTimeStr)
-				if err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("invalid end_time: %v", err)), nil
-				}
-				endTime = v
+			endTime, err := timeutil.ParseAny(args["end_time"])
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid end_time: %v", err)), nil
 			}
 
-			// Default include_alerts to true if not explicitly set to false
 			includeAlerts := true
-			if v, ok := request.GetArguments()["include_alerts"].(bool); ok {
+			if v, ok := args["include_alerts"].(bool); ok {
 				includeAlerts = v
 			}
 

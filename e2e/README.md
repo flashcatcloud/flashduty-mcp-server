@@ -51,7 +51,7 @@ Note: Debug mode has slightly reduced coverage as it doesn't test Docker integra
 ### Read-Only Tools Tests
 
 - **TestQueryIncidents**: Tests querying incidents
-- **TestQueryChannels**: Tests querying collaboration spaces
+- **TestQueryChannels**: Tests querying channels
 - **TestQueryMembers**: Tests querying members
 
 ### Incident Lifecycle Tests
@@ -60,7 +60,7 @@ Note: Debug mode has slightly reduced coverage as it doesn't test Docker integra
 
 ## Limitations
 
-1. **Resource Cleanup**: Unlike GitHub's API, Flashduty doesn't support deleting incidents or collaboration spaces. Tests that create resources will close them instead of deleting them.
+1. **Resource Cleanup**: Unlike GitHub's API, Flashduty doesn't support deleting incidents or channels. Tests that create resources will close them instead of deleting them.
 
 2. **Test Account**: It's recommended to use a dedicated test APP key to avoid polluting production data.
 
