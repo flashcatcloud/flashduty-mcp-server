@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"strconv"
 	"strings"
 
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"golang.org/x/sync/errgroup"
 
+	"github.com/flashcatcloud/flashduty-mcp-server/internal/timeutil"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
@@ -30,9 +29,9 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			mcp.WithString("incident_ids", mcp.Description("Comma-separated incident IDs for direct lookup. If provided, other filters are ignored.")),
 			mcp.WithString("progress", mcp.Description("Filter by status. Valid values: Triggered, Processing, Closed. Comma-separated for multiple."), mcp.Enum("Triggered", "Processing", "Closed", "Triggered,Processing", "Processing,Closed", "Triggered,Closed", "Triggered,Processing,Closed")),
 			mcp.WithString("severity", mcp.Description("Filter by severity level. Valid values: Info, Warning, Critical."), mcp.Enum("Info", "Warning", "Critical")),
-			mcp.WithString("channel_ids", mcp.Description("Filter by channel IDs. Comma-separated for multiple.")),
-			mcp.WithNumber("start_time", mcp.Description("Query start time in Unix timestamp (seconds). Required if no incident_ids. Must be < end_time. Max range: 31 days.")),
-			mcp.WithNumber("end_time", mcp.Description("Query end time in Unix timestamp (seconds). Required if no incident_ids. Must be within data retention period.")),
+			mcp.WithString("channel_ids", mcp.Description("Comma-separated collaboration space IDs to filter by. Backend expects an array — singular channel_id is silently ignored.")),
+			mcp.WithString("start_time", mcp.Description("Query start time. Accepts: relative duration like \"24h\", \"7d\", \"30m\" (interpreted as now minus duration); absolute date \"2026-04-01\"; datetime \"2026-04-01 10:00:00\"; unix seconds \"1712000000\"; or \"now\". Required if no incident_ids. Max range: 31 days.")),
+			mcp.WithString("end_time", mcp.Description("Query end time. Same formats as start_time, plus future durations like \"+24h\", \"+7d\". Defaults to \"now\" when omitted. Required if no incident_ids.")),
 			mcp.WithString("title", mcp.Description("Keyword search in incident title.")),
 			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 			mcp.WithBoolean("include_alerts", mcp.Description("Whether to include alerts preview (first 20 alerts with total count)."), mcp.DefaultBool(true)),
@@ -47,15 +46,21 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			progress, _ := OptionalParam[string](request, "progress")
 			severity, _ := OptionalParam[string](request, "severity")
 			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
-			channelIDs := parseCommaSeparatedInts(channelIdsStr)
-			startTime, _ := OptionalInt(request, "start_time")
-			endTime, _ := OptionalInt(request, "end_time")
+			args := request.GetArguments()
 			title, _ := OptionalParam[string](request, "title")
 			limit, _ := OptionalInt(request, "limit")
 
-			// Default include_alerts to true if not explicitly set to false
+			startTime, err := timeutil.ParseAny(args["start_time"])
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid start_time: %v", err)), nil
+			}
+			endTime, err := timeutil.ParseAny(args["end_time"])
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid end_time: %v", err)), nil
+			}
+
 			includeAlerts := true
-			if v, ok := request.GetArguments()["include_alerts"].(bool); ok {
+			if v, ok := args["include_alerts"].(bool); ok {
 				includeAlerts = v
 			}
 
@@ -63,63 +68,45 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				limit = defaultQueryLimit
 			}
 
-			var rawIncidents []RawIncident
+			input := &sdk.ListIncidentsInput{
+				Progress:      progress,
+				Severity:      severity,
+				StartTime:     startTime,
+				EndTime:       endTime,
+				Title:         title,
+				Limit:         limit,
+				IncludeAlerts: includeAlerts,
+			}
 
-			// Query by IDs or by filters
+			if channelIdsStr != "" {
+				channelIDs := parseCommaSeparatedInts(channelIdsStr)
+				if len(channelIDs) == 0 {
+					return mcp.NewToolResultError("channel_ids must contain at least one valid ID when specified"), nil
+				}
+				input.ChannelIDs = make([]int64, len(channelIDs))
+				for i, id := range channelIDs {
+					input.ChannelIDs[i] = int64(id)
+				}
+			}
+
 			if incidentIdsStr != "" {
 				incidentIDs := parseCommaSeparatedStrings(incidentIdsStr)
 				if len(incidentIDs) == 0 {
 					return mcp.NewToolResultError("incident_ids must contain at least one valid ID when specified"), nil
 				}
-				rawIncidents, err = client.fetchIncidentsByIDs(ctx, incidentIDs)
-			} else {
-				if startTime == 0 || endTime == 0 {
-					return mcp.NewToolResultError("Both start_time and end_time are required for time-based queries"), nil
-				}
-				rawIncidents, err = client.fetchIncidentsByFilters(ctx, progress, severity, channelIDs, startTime, endTime, title, limit)
+				input.IncidentIDs = incidentIDs
+			} else if startTime == 0 || endTime == 0 {
+				return mcp.NewToolResultError("Both start_time and end_time are required for time-based queries"), nil
 			}
 
+			output, err := client.ListIncidents(ctx, input)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve incidents: %v", err)), nil
 			}
 
-			if len(rawIncidents) == 0 {
-				return MarshalResult(map[string]any{
-					"incidents": []EnrichedIncident{},
-					"total":     0,
-				}), nil
-			}
-
-			// Enrich incidents with person/channel names
-			enrichedIncidents, err := client.enrichIncidents(ctx, rawIncidents)
-			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Unable to load additional incident details: %v", err)), nil
-			}
-
-			// Fetch alerts concurrently if requested
-			if includeAlerts && len(enrichedIncidents) > 0 {
-				g, gctx := errgroup.WithContext(ctx)
-				for i := range enrichedIncidents {
-					i := i
-					incidentID := enrichedIncidents[i].IncidentID
-					g.Go(func() error {
-						alerts, total, err := client.fetchIncidentAlerts(gctx, incidentID, defaultQueryLimit)
-						if err != nil {
-							return err
-						}
-						enrichedIncidents[i].AlertsPreview = alerts
-						enrichedIncidents[i].AlertsTotal = total
-						return nil
-					})
-				}
-				if err := g.Wait(); err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve alerts: %v", err)), nil
-				}
-			}
-
 			return MarshalResult(map[string]any{
-				"incidents": enrichedIncidents,
-				"total":     len(enrichedIncidents),
+				"incidents": output.Incidents,
+				"total":     output.Total,
 			}), nil
 		}
 }
@@ -151,50 +138,18 @@ func QueryIncidentTimeline(getClient GetFlashdutyClientFn, t translations.Transl
 				return mcp.NewToolResultError("incident_ids must contain at least one valid ID"), nil
 			}
 
-			// Fetch all timelines concurrently
-			type timelineResult struct {
-				IncidentID string
-				Items      []RawTimelineItem
-			}
-			results := make([]timelineResult, len(incidentIDs))
-			allPersonIDs := make([]int64, 0)
-
-			g, gctx := errgroup.WithContext(ctx)
-			for i, id := range incidentIDs {
-				i, id := i, id
-				g.Go(func() error {
-					items, err := client.fetchIncidentTimeline(gctx, id)
-					if err != nil {
-						return err
-					}
-					results[i] = timelineResult{IncidentID: id, Items: items}
-					return nil
-				})
-			}
-
-			if err := g.Wait(); err != nil {
+			results, err := client.GetIncidentTimelines(ctx, incidentIDs)
+			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve timeline: %v", err)), nil
 			}
 
-			// Collect all person IDs from all timelines
-			for _, r := range results {
-				allPersonIDs = append(allPersonIDs, collectTimelinePersonIDs(r.Items)...)
-			}
-
-			// Batch fetch person info (use original ctx, not errgroup's ctx)
-			personMap, err := client.fetchPersonInfos(ctx, allPersonIDs)
-			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Unable to load person details: %v", err)), nil
-			}
-
-			// Build enriched response
+			// Build response matching expected JSON shape
 			response := make([]map[string]any, 0, len(results))
 			for _, r := range results {
-				enrichedEvents := enrichTimelineItems(r.Items, personMap)
 				response = append(response, map[string]any{
 					"incident_id": r.IncidentID,
-					"timeline":    enrichedEvents,
-					"total":       len(enrichedEvents),
+					"timeline":    r.Timeline,
+					"total":       r.Total,
 				})
 			}
 
@@ -237,32 +192,12 @@ func QueryIncidentAlerts(getClient GetFlashdutyClientFn, t translations.Translat
 				limit = defaultQueryLimit
 			}
 
-			// Fetch all alerts concurrently
-			type alertsResult struct {
-				IncidentID string
-				Alerts     []AlertPreview
-				Total      int
-			}
-			results := make([]alertsResult, len(incidentIDs))
-
-			g, gctx := errgroup.WithContext(ctx)
-			for i, id := range incidentIDs {
-				i, id := i, id
-				g.Go(func() error {
-					alerts, total, err := client.fetchIncidentAlerts(gctx, id, limit)
-					if err != nil {
-						return err
-					}
-					results[i] = alertsResult{IncidentID: id, Alerts: alerts, Total: total}
-					return nil
-				})
-			}
-
-			if err := g.Wait(); err != nil {
+			results, err := client.ListIncidentAlerts(ctx, incidentIDs, limit)
+			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve alerts: %v", err)), nil
 			}
 
-			// Build response
+			// Build response matching expected JSON shape
 			response := make([]map[string]any, 0, len(results))
 			for _, r := range results {
 				response = append(response, map[string]any{
@@ -278,90 +213,6 @@ func QueryIncidentAlerts(getClient GetFlashdutyClientFn, t translations.Translat
 		}
 }
 
-// fetchIncidentsByIDs fetches incidents by their IDs
-func (c *Client) fetchIncidentsByIDs(ctx context.Context, incidentIDs []string) ([]RawIncident, error) {
-	requestBody := map[string]interface{}{
-		"incident_ids": incidentIDs,
-	}
-
-	resp, err := c.makeRequest(ctx, "POST", "/incident/list-by-ids", requestBody)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, handleAPIError(resp)
-	}
-
-	var result struct {
-		Error *DutyError `json:"error,omitempty"`
-		Data  *struct {
-			Items []RawIncident `json:"items"`
-		} `json:"data,omitempty"`
-	}
-	if err := parseResponse(resp, &result); err != nil {
-		return nil, err
-	}
-	if result.Error != nil {
-		return nil, fmt.Errorf("API error: %s - %s", result.Error.Code, result.Error.Message)
-	}
-	if result.Data == nil {
-		return nil, nil
-	}
-	return result.Data.Items, nil
-}
-
-// fetchIncidentsByFilters fetches incidents by filters
-func (c *Client) fetchIncidentsByFilters(ctx context.Context, progress, severity string, channelIDs []int, startTime, endTime int, title string, limit int) ([]RawIncident, error) {
-	requestBody := map[string]interface{}{
-		"p":          1,
-		"limit":      limit,
-		"start_time": startTime,
-		"end_time":   endTime,
-	}
-
-	if progress != "" {
-		requestBody["progress"] = progress
-	}
-	if severity != "" {
-		requestBody["incident_severity"] = severity
-	}
-	if len(channelIDs) > 0 {
-		requestBody["channel_ids"] = channelIDs
-	}
-	if title != "" {
-		requestBody["title"] = title
-	}
-
-	resp, err := c.makeRequest(ctx, "POST", "/incident/list", requestBody)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, handleAPIError(resp)
-	}
-
-	var result struct {
-		Error *DutyError `json:"error,omitempty"`
-		Data  *struct {
-			Items []RawIncident `json:"items"`
-		} `json:"data,omitempty"`
-	}
-	if err := parseResponse(resp, &result); err != nil {
-		return nil, err
-	}
-	if result.Error != nil {
-		return nil, fmt.Errorf("API error: %s - %s", result.Error.Code, result.Error.Message)
-	}
-	if result.Data == nil {
-		return nil, nil
-	}
-	return result.Data.Items, nil
-}
-
 const createIncidentDescription = `Create a new incident with title and severity. Optionally assign to channel or responders.`
 
 // CreateIncident creates a tool to create a new incident
@@ -374,7 +225,7 @@ func CreateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			}),
 			mcp.WithString("title", mcp.Required(), mcp.Description("Incident title. Length: 3-200 characters."), mcp.MinLength(3), mcp.MaxLength(200)),
 			mcp.WithString("severity", mcp.Required(), mcp.Description("Incident severity level."), mcp.Enum("Info", "Warning", "Critical")),
-			mcp.WithNumber("channel_id", mcp.Description("Channel ID to associate the incident with.")),
+			mcp.WithNumber("channel_id", mcp.Description("Collaboration space ID to associate the incident with.")),
 			mcp.WithString("description", mcp.Description("Incident description. Max 6144 characters."), mcp.MaxLength(6144)),
 			mcp.WithString("assigned_to", mcp.Description("Comma-separated person IDs to assign as responders. Use query_members to find IDs.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -395,43 +246,25 @@ func CreateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 
 			channelID, _ := OptionalInt(request, "channel_id")
 			description, _ := OptionalParam[string](request, "description")
-			assignedTo, _ := OptionalParam[string](request, "assigned_to")
+			assignedToStr, _ := OptionalParam[string](request, "assigned_to")
 
-			requestBody := map[string]interface{}{
-				"title":             title,
-				"incident_severity": severity,
-			}
-			if channelID > 0 {
-				requestBody["channel_id"] = channelID
-			}
-			if description != "" {
-				requestBody["description"] = description
-			}
-			if assignedTo != "" {
-				personIDs := parseCommaSeparatedInts(assignedTo)
-				if len(personIDs) > 0 {
-					requestBody["assigned_to"] = map[string]interface{}{
-						"type":       "assign",
-						"person_ids": personIDs,
-					}
-				}
+			input := &sdk.CreateIncidentInput{
+				Title:       title,
+				Severity:    severity,
+				ChannelID:   int64(channelID),
+				Description: description,
 			}
 
-			resp, err := client.makeRequest(ctx, "POST", "/incident/create", requestBody)
+			if assignedToStr != "" {
+				input.AssignedTo = parseCommaSeparatedInts(assignedToStr)
+			}
+
+			result, err := client.CreateIncident(ctx, input)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create incident: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			var result FlashdutyResponse
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
+				return mcp.NewToolResultError(fmt.Sprintf("Unable to create incident: %v", err)), nil
 			}
 
-			return MarshalResult(result.Data), nil
+			return MarshalResult(result), nil
 		}
 }
 
@@ -466,49 +299,27 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			severity, _ := OptionalParam[string](request, "severity")
 			customFieldsStr, _ := OptionalParam[string](request, "custom_fields")
 
-			updatedFields := make([]string, 0)
-
-			// Update title
-			if title != "" {
-				if err := client.updateIncidentField(ctx, incidentID, "/incident/title/reset", "title", title); err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("Unable to update title: %v", err)), nil
-				}
-				updatedFields = append(updatedFields, "title")
+			input := &sdk.UpdateIncidentInput{
+				IncidentID:  incidentID,
+				Title:       title,
+				Description: description,
+				Severity:    severity,
 			}
 
-			// Update description
-			if description != "" {
-				if err := client.updateIncidentField(ctx, incidentID, "/incident/description/reset", "description", description); err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("Unable to update description: %v", err)), nil
-				}
-				updatedFields = append(updatedFields, "description")
-			}
-
-			// Update severity
-			if severity != "" {
-				if err := client.updateIncidentField(ctx, incidentID, "/incident/severity/reset", "incident_severity", severity); err != nil {
-					return mcp.NewToolResultError(fmt.Sprintf("Unable to update severity: %v", err)), nil
-				}
-				updatedFields = append(updatedFields, "severity")
-			}
-
-			// Update custom fields
+			// Parse custom fields JSON if provided
 			if customFieldsStr != "" {
 				customFieldsStr = strings.TrimSpace(customFieldsStr)
 				if customFieldsStr == "" {
 					return mcp.NewToolResultError("custom_fields must be a valid JSON object, not empty"), nil
 				}
-
 				var customFields map[string]any
 				if err := json.Unmarshal([]byte(customFieldsStr), &customFields); err != nil {
 					return mcp.NewToolResultError(fmt.Sprintf("custom_fields must be a valid JSON object: %v", err)), nil
 				}
-
 				if len(customFields) == 0 {
 					return mcp.NewToolResultError("custom_fields must contain at least one field"), nil
 				}
-
-				// Validate field names (alphanumeric and underscore only)
+				// Validate field names locally so users get fast, clear errors before round-tripping to the API.
 				for fieldName := range customFields {
 					if fieldName == "" {
 						return mcp.NewToolResultError("custom_fields contains an empty field name"), nil
@@ -520,17 +331,12 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 						}
 					}
 				}
-
-				for fieldName, fieldValue := range customFields {
-					if err := client.updateCustomField(ctx, incidentID, fieldName, fieldValue); err != nil {
-						return mcp.NewToolResultError(fmt.Sprintf("Unable to update custom field '%s': %v", fieldName, err)), nil
-					}
-					updatedFields = append(updatedFields, fieldName)
-				}
+				input.CustomFields = customFields
 			}
 
-			if len(updatedFields) == 0 {
-				return mcp.NewToolResultError("No fields specified to update"), nil
+			updatedFields, err := client.UpdateIncident(ctx, input)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Unable to update incident: %v", err)), nil
 			}
 
 			return MarshalResult(map[string]any{
@@ -539,61 +345,6 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				"updated_fields": updatedFields,
 			}), nil
 		}
-}
-
-// updateIncidentField is a helper to update a single incident field
-func (c *Client) updateIncidentField(ctx context.Context, incidentID, endpoint, fieldName, fieldValue string) error {
-	requestBody := map[string]interface{}{
-		"incident_id": incidentID,
-		fieldName:     fieldValue,
-	}
-
-	resp, err := c.makeRequest(ctx, "POST", endpoint, requestBody)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return handleAPIError(resp)
-	}
-
-	var result FlashdutyResponse
-	if err := parseResponse(resp, &result); err != nil {
-		return err
-	}
-	if result.Error != nil {
-		return fmt.Errorf("API error: %s - %s", result.Error.Code, result.Error.Message)
-	}
-	return nil
-}
-
-// updateCustomField is a helper to update a custom field
-func (c *Client) updateCustomField(ctx context.Context, incidentID, fieldName string, fieldValue any) error {
-	requestBody := map[string]interface{}{
-		"incident_id": incidentID,
-		"field_name":  fieldName,
-		"field_value": fieldValue,
-	}
-
-	resp, err := c.makeRequest(ctx, "POST", "/incident/field/reset", requestBody)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return handleAPIError(resp)
-	}
-
-	var result FlashdutyResponse
-	if err := parseResponse(resp, &result); err != nil {
-		return err
-	}
-	if result.Error != nil {
-		return fmt.Errorf("API error: %s - %s", result.Error.Code, result.Error.Message)
-	}
-	return nil
 }
 
 const ackIncidentDescription = `Acknowledge incidents. Moves status from Triggered to Processing.`
@@ -623,26 +374,8 @@ func AckIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 				return mcp.NewToolResultError("incident_ids must contain at least one valid ID"), nil
 			}
 
-			requestBody := map[string]interface{}{
-				"incident_ids": incidentIDs,
-			}
-
-			resp, err := client.makeRequest(ctx, "POST", "/incident/ack", requestBody)
-			if err != nil {
-				return nil, fmt.Errorf("unable to acknowledge incidents: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
-			}
-
-			var result FlashdutyResponse
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
+			if err := client.AckIncidents(ctx, incidentIDs); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Unable to acknowledge incidents: %v", err)), nil
 			}
 
 			return MarshalResult(map[string]string{
@@ -679,26 +412,8 @@ func CloseIncident(getClient GetFlashdutyClientFn, t translations.TranslationHel
 				return mcp.NewToolResultError("incident_ids must contain at least one valid ID"), nil
 			}
 
-			requestBody := map[string]interface{}{
-				"incident_ids": incidentIDs,
-			}
-
-			resp, err := client.makeRequest(ctx, "POST", "/incident/resolve", requestBody)
-			if err != nil {
-				return nil, fmt.Errorf("unable to close incidents: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
-			}
-
-			var result FlashdutyResponse
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
+			if err := client.CloseIncidents(ctx, incidentIDs); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("Unable to close incidents: %v", err)), nil
 			}
 
 			return MarshalResult(map[string]string{
@@ -736,88 +451,14 @@ func ListSimilarIncidents(getClient GetFlashdutyClientFn, t translations.Transla
 				limit = defaultQueryLimit
 			}
 
-			requestBody := map[string]interface{}{
-				"incident_id": incidentID,
-				"p":           1,
-				"limit":       limit,
-			}
-
-			resp, err := client.makeRequest(ctx, "POST", "/incident/past/list", requestBody)
+			output, err := client.ListSimilarIncidents(ctx, incidentID, limit)
 			if err != nil {
-				return nil, fmt.Errorf("unable to find similar incidents: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
-			}
-
-			var result struct {
-				Error *DutyError `json:"error,omitempty"`
-				Data  *struct {
-					Items []RawIncident `json:"items"`
-					Total int           `json:"total"`
-				} `json:"data,omitempty"`
-			}
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
-			}
-
-			if result.Data == nil || len(result.Data.Items) == 0 {
-				return MarshalResult(map[string]any{
-					"incidents": []EnrichedIncident{},
-					"total":     0,
-				}), nil
-			}
-
-			// Enrich similar incidents
-			enrichedIncidents, err := client.enrichIncidents(ctx, result.Data.Items)
-			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Unable to load additional incident details: %v", err)), nil
+				return mcp.NewToolResultError(fmt.Sprintf("Unable to find similar incidents: %v", err)), nil
 			}
 
 			return MarshalResult(map[string]any{
-				"incidents": enrichedIncidents,
-				"total":     result.Data.Total,
+				"incidents": output.Incidents,
+				"total":     output.Total,
 			}), nil
 		}
-}
-
-// Helper functions
-
-func parseCommaSeparatedStrings(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			result = append(result, part)
-		}
-	}
-	return result
-}
-
-func parseCommaSeparatedInts(s string) []int {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	result := make([]int, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		id, err := strconv.Atoi(part)
-		if err == nil {
-			result = append(result, id)
-		}
-	}
-	return result
 }

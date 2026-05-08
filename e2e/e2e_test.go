@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 	mcpClient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
@@ -55,13 +57,19 @@ func getE2EBaseURL() string {
 	return baseURL
 }
 
-// getAPIClient creates a native Flashduty API client for verification purposes
-func getAPIClient(t *testing.T) *pkgflashduty.Client {
+// getAPIClient creates a native Flashduty SDK client for verification purposes
+func getAPIClient(t *testing.T) *sdk.Client {
 	appKey := getE2EAppKey(t)
 	baseURL := getE2EBaseURL()
 
-	client, err := pkgflashduty.NewClient(appKey, baseURL, "e2e-test-client/1.0.0")
-	require.NoError(t, err, "expected to create Flashduty API client")
+	opts := []sdk.Option{
+		sdk.WithUserAgent("e2e-test-client/1.0.0"),
+	}
+	if baseURL != "" {
+		opts = append(opts, sdk.WithBaseURL(baseURL))
+	}
+	client, err := sdk.NewClient(appKey, opts...)
+	require.NoError(t, err, "expected to create Flashduty SDK client")
 
 	return client
 }
@@ -412,8 +420,8 @@ func TestQueryIncidents(t *testing.T) {
 
 	t.Log("Querying incidents from the last 7 days...")
 	responseText := callTool(t, mcpClient, "query_incidents", map[string]any{
-		"start_time":     startTime,
-		"end_time":       now,
+		"start_time":     strconv.FormatInt(startTime, 10),
+		"end_time":       strconv.FormatInt(now, 10),
 		"limit":          10,
 		"include_alerts": false,
 	})
@@ -524,8 +532,8 @@ func TestQueryChanges(t *testing.T) {
 
 	t.Log("Querying changes from the last 7 days...")
 	responseText := callTool(t, mcpClient, "query_changes", map[string]any{
-		"start_time": startTime,
-		"end_time":   now,
+		"start_time": strconv.FormatInt(startTime, 10),
+		"end_time":   strconv.FormatInt(now, 10),
 		"limit":      10,
 	})
 

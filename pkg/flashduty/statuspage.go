@@ -2,15 +2,13 @@ package flashduty
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"strings"
-	"time"
 
+	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/flashcatcloud/flashduty-mcp-server/internal/timeutil"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
@@ -33,47 +31,6 @@ func QueryStatusPages(getClient GetFlashdutyClientFn, t translations.Translation
 
 			pageIdsStr, _ := OptionalParam[string](request, "page_ids")
 
-			// List all pages first
-			resp, err := client.makeRequest(ctx, "GET", "/status-page/list", nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to list status pages: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
-			}
-
-			var result struct {
-				Error *DutyError `json:"error,omitempty"`
-				Data  *struct {
-					Items []struct {
-						PageID      int64  `json:"page_id"`
-						PageName    string `json:"name"`
-						URLName     string `json:"url_name,omitempty"`
-						Description string `json:"description,omitempty"`
-						Components  []struct {
-							ComponentID string `json:"component_id"`
-							Name        string `json:"name"`
-						} `json:"components,omitempty"`
-					} `json:"items"`
-				} `json:"data,omitempty"`
-			}
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
-			}
-
-			if result.Data == nil || len(result.Data.Items) == 0 {
-				return MarshalResult(map[string]any{
-					"pages": []StatusPage{},
-					"total": 0,
-				}), nil
-			}
-
-			// Filter by page_ids if provided
 			var pageIDs []int64
 			if pageIdsStr != "" {
 				for _, id := range parseCommaSeparatedInts(pageIdsStr) {
@@ -81,44 +38,9 @@ func QueryStatusPages(getClient GetFlashdutyClientFn, t translations.Translation
 				}
 			}
 
-			pages := make([]StatusPage, 0)
-			for _, item := range result.Data.Items {
-				// Skip if filtering and not in list
-				if len(pageIDs) > 0 {
-					found := false
-					for _, id := range pageIDs {
-						if id == item.PageID {
-							found = true
-							break
-						}
-					}
-					if !found {
-						continue
-					}
-				}
-
-				page := StatusPage{
-					PageID:      item.PageID,
-					PageName:    item.PageName,
-					Slug:        item.URLName,
-					Description: item.Description,
-				}
-
-				// Convert components and calculate overall status
-				worstStatus := "operational"
-				if len(item.Components) > 0 {
-					page.Components = make([]StatusComponent, 0, len(item.Components))
-					for _, comp := range item.Components {
-						page.Components = append(page.Components, StatusComponent{
-							ComponentID:   comp.ComponentID,
-							ComponentName: comp.Name,
-							Status:        "operational", // Default status
-						})
-					}
-				}
-				page.OverallStatus = worstStatus
-
-				pages = append(pages, page)
+			pages, err := client.ListStatusPages(ctx, pageIDs)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to list status pages: %v", err)), nil
 			}
 
 			return MarshalResult(map[string]any{
@@ -160,41 +82,17 @@ func ListStatusChanges(getClient GetFlashdutyClientFn, t translations.Translatio
 				return mcp.NewToolResultError("type must be 'incident' or 'maintenance'"), nil
 			}
 
-			// Use GET for active list endpoint
-			resp, err := client.makeRequest(ctx, "GET", fmt.Sprintf("/status-page/change/active/list?page_id=%d&type=%s", pageID, changeType), nil)
+			output, err := client.ListStatusChanges(ctx, &sdk.ListStatusChangesInput{
+				PageID:     int64(pageID),
+				ChangeType: changeType,
+			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to list status changes: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			if resp.StatusCode != http.StatusOK {
-				return mcp.NewToolResultError(handleAPIError(resp).Error()), nil
-			}
-
-			var result struct {
-				Error *DutyError `json:"error,omitempty"`
-				Data  *struct {
-					Items []StatusChange `json:"items"`
-					Total int            `json:"total"`
-				} `json:"data,omitempty"`
-			}
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
-			}
-
-			changes := []StatusChange{}
-			total := 0
-			if result.Data != nil {
-				changes = result.Data.Items
-				total = result.Data.Total
+				return mcp.NewToolResultError(fmt.Sprintf("failed to list status changes: %v", err)), nil
 			}
 
 			return MarshalResult(map[string]any{
-				"changes": changes,
-				"total":   total,
+				"changes": output.Changes,
+				"total":   output.Total,
 			}), nil
 		}
 }
@@ -236,76 +134,19 @@ func CreateStatusIncident(getClient GetFlashdutyClientFn, t translations.Transla
 			affectedComponents, _ := OptionalParam[string](request, "affected_components")
 			notifySubscribers, _ := OptionalParam[bool](request, "notify_subscribers")
 
-			if status == "" {
-				status = "investigating"
-			}
-
-			// Build the initial update
-			update := map[string]interface{}{
-				"at_seconds": time.Now().Unix(),
-				"status":     status,
-			}
-			if message != "" {
-				update["description"] = message
-			}
-
-			// Parse component changes if provided (format: "id1:status1,id2:status2")
-			if affectedComponents != "" {
-				var componentChanges []map[string]string
-				parts := parseCommaSeparatedStrings(affectedComponents)
-				for _, part := range parts {
-					kv := strings.SplitN(part, ":", 2)
-					if len(kv) == 2 {
-						componentChanges = append(componentChanges, map[string]string{
-							"component_id": strings.TrimSpace(kv[0]),
-							"status":       strings.TrimSpace(kv[1]),
-						})
-					} else if len(kv) == 1 && kv[0] != "" {
-						// Default to partial_outage if no status specified
-						componentChanges = append(componentChanges, map[string]string{
-							"component_id": strings.TrimSpace(kv[0]),
-							"status":       "partial_outage",
-						})
-					}
-				}
-				if len(componentChanges) > 0 {
-					update["component_changes"] = componentChanges
-				}
-			}
-
-			// Use message as both change description and first update description
-			description := message
-			if description == "" {
-				description = title // Fallback to title if no message provided
-			}
-
-			requestBody := map[string]interface{}{
-				"page_id":     pageID,
-				"title":       title,
-				"type":        "incident",
-				"status":      status,
-				"description": description,
-				"updates":     []map[string]interface{}{update},
-			}
-
-			// Default notify_subscribers to true
-			requestBody["notify_subscribers"] = notifySubscribers
-
-			resp, err := client.makeRequest(ctx, "POST", "/status-page/change/create", requestBody)
+			data, err := client.CreateStatusIncident(ctx, &sdk.CreateStatusIncidentInput{
+				PageID:             int64(pageID),
+				Title:              title,
+				Message:            message,
+				Status:             status,
+				AffectedComponents: affectedComponents,
+				NotifySubscribers:  notifySubscribers,
+			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to create status incident: %w", err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
-			var result FlashdutyResponse
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
+				return mcp.NewToolResultError(fmt.Sprintf("failed to create status incident: %v", err)), nil
 			}
 
-			return MarshalResult(result.Data), nil
+			return MarshalResult(data), nil
 		}
 }
 
@@ -322,7 +163,7 @@ func CreateChangeTimeline(getClient GetFlashdutyClientFn, t translations.Transla
 			mcp.WithNumber("page_id", mcp.Required(), mcp.Description("Status page ID.")),
 			mcp.WithNumber("change_id", mcp.Required(), mcp.Description("Change event ID (incident or maintenance) to update.")),
 			mcp.WithString("message", mcp.Required(), mcp.Description("Update message describing the timeline entry.")),
-			mcp.WithNumber("at", mcp.Description("Timestamp for update in Unix seconds. Defaults to current time.")),
+			mcp.WithString("at", mcp.Description("Timestamp for update. Accepts: relative duration like \"5m\" (interpreted as now minus duration); absolute date \"2026-04-01\"; datetime \"2026-04-01 10:00:00\"; unix seconds \"1712000000\"; or \"now\". Defaults to current time when omitted.")),
 			mcp.WithString("status", mcp.Description("New status. For incidents: investigating, identified, monitoring, resolved. For maintenances: scheduled, ongoing, completed.")),
 			mcp.WithString("component_changes", mcp.Description("JSON array of component status changes. Format: [{\"component_id\":\"xxx\",\"status\":\"degraded\"}]. Valid statuses: operational, degraded, partial_outage, full_outage.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -346,41 +187,24 @@ func CreateChangeTimeline(getClient GetFlashdutyClientFn, t translations.Transla
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			at, _ := OptionalInt(request, "at")
 			status, _ := OptionalParam[string](request, "status")
 			componentChanges, _ := OptionalParam[string](request, "component_changes")
 
-			requestBody := map[string]interface{}{
-				"page_id":     pageID,
-				"change_id":   changeID,
-				"description": message,
-			}
-			if at > 0 {
-				requestBody["at_seconds"] = at
-			}
-			if status != "" {
-				requestBody["status"] = status
-			}
-			if componentChanges != "" {
-				// Parse JSON array if provided
-				var changes []map[string]string
-				if err := json.Unmarshal([]byte(componentChanges), &changes); err == nil {
-					requestBody["component_changes"] = changes
-				}
-			}
-
-			resp, err := client.makeRequest(ctx, "POST", "/status-page/change/timeline/create", requestBody)
+			atSeconds, err := timeutil.ParseAny(request.GetArguments()["at"])
 			if err != nil {
-				return nil, fmt.Errorf("failed to create timeline: %w", err)
+				return mcp.NewToolResultError(fmt.Sprintf("invalid at: %v", err)), nil
 			}
-			defer func() { _ = resp.Body.Close() }()
 
-			var result FlashdutyResponse
-			if err := parseResponse(resp, &result); err != nil {
-				return nil, err
-			}
-			if result.Error != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("API error: %s - %s", result.Error.Code, result.Error.Message)), nil
+			err = client.CreateChangeTimeline(ctx, &sdk.CreateChangeTimelineInput{
+				PageID:           int64(pageID),
+				ChangeID:         int64(changeID),
+				Message:          message,
+				AtSeconds:        atSeconds,
+				Status:           status,
+				ComponentChanges: componentChanges,
+			})
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("failed to create timeline: %v", err)), nil
 			}
 
 			return MarshalResult(map[string]string{
