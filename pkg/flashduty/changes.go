@@ -28,7 +28,7 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			WithSince(),
 			WithUntil(),
 			mcp.WithString("type", mcp.Description("Filter by change type.")),
-			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -92,9 +92,9 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve changes: %v", err)), nil
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalResult(addTruncationHint(map[string]any{
 				"changes": output.Changes,
 				"total":   output.Total,
-			}), nil
+			}, len(output.Changes), output.Total)), nil
 		}
 }

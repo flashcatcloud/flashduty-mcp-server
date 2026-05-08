@@ -33,7 +33,7 @@ func QueryAlerts(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 			mcp.WithBoolean("ever_muted", mcp.Description("If true, only return alerts that were ever muted by a routing rule.")),
 			mcp.WithString("title", mcp.Description("Keyword search in alert title.")),
 			mcp.WithString("labels", mcp.Description("JSON object of label key-value pairs to match. Format: {\"resource\":\"web-01\",\"region\":\"us-west\"}.")),
-			mcp.WithNumber("limit", mcp.Description("Maximum number of results to return."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -118,12 +118,12 @@ func QueryAlerts(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve alerts: %v", err)), nil
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalResult(addTruncationHint(map[string]any{
 				"alerts":           output.Alerts,
 				"total":            output.Total,
 				"has_next_page":    output.HasNextPage,
 				"search_after_ctx": output.SearchAfterCtx,
-			}), nil
+			}, len(output.Alerts), output.Total)), nil
 		}
 }
 
