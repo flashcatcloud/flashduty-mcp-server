@@ -53,7 +53,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("invalid since: %v", err)), nil
 			}
-			endTime, err := timeutil.ParseAny(args["until"])
+			endTime, err := parseUntilArg(args["until"])
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("invalid until: %v", err)), nil
 			}
