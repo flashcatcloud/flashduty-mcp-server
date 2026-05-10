@@ -23,6 +23,27 @@ const defaultQueryLimit = 20
 // list is always available via query_incident_alerts on a single incident.
 const alertsPreviewLimit = 5
 
+// alertLabelValueMaxRunes caps the length of each label *value* in an alert
+// preview. Keys are kept intact: when 5 alerts share the same title, labels
+// are usually the only signal that distinguishes them (different host,
+// region, service), so stripping labels outright loses the information the
+// LLM needs. Long values come from one specific pathology — accounts that
+// embed multi-KB JSON blobs inside a single label value — and truncating
+// just those keeps the dimension set readable without bloating the response.
+const alertLabelValueMaxRunes = 200
+
+// truncateLabelValues caps each label value at maxRunes runes (rune-aware so
+// CJK is not mangled), appending "..." when truncated. Operates in place;
+// nil-safe.
+func truncateLabelValues(labels map[string]string, maxRunes int) {
+	for k, v := range labels {
+		runes := []rune(v)
+		if len(runes) > maxRunes {
+			labels[k] = string(runes[:maxRunes]) + "..."
+		}
+	}
+}
+
 const queryIncidentsDescription = `Query incidents by IDs, time range, status, severity, channel, or free-text query. Returns enriched data with names.`
 
 // QueryIncidents creates a tool to query incidents with enriched data
@@ -41,7 +62,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			WithUntil(),
 			mcp.WithString("query", mcp.Description("Free-text search across title, labels, and content (Doris full-text). A 24-char hex string is resolved as an incident ID; a 6-char string is resolved as an incident num. Prefer this over picking exact filter values when the user gives a fuzzy keyword."), mcp.MaxLength(200)),
 			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
-			mcp.WithBoolean("include_alerts", mcp.Description("Include a preview of up to 5 alerts per incident (alert_id, title, severity, status, start_time — labels intentionally omitted to keep the response small). Defaults to false because the alert payload can dominate the context window. Use the `alerts_total` count first; drill into a specific incident with `query_incident_alerts` when you need the full list or labels."), mcp.DefaultBool(false)),
+			mcp.WithBoolean("include_alerts", mcp.Description("Include a preview of up to 5 alerts per incident (alert_id, title, severity, status, start_time, labels). Long label values are truncated to 200 chars so the dimension keys are still visible without bloating the response. Defaults to false because the alert payload can dominate the context window — use the `alerts_total` count first, then drill into a specific incident with `query_incident_alerts` for the untruncated full list."), mcp.DefaultBool(false)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -111,15 +132,14 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve incidents: %v", err)), nil
 			}
 
-			// Strip per-alert labels from the preview. Labels are routinely the
-			// largest field on an alert (some accounts embed multi-KB JSON inside
-			// a single label value), and the preview is meant to be a glance, not
-			// a forensic record — full labels are still available via
-			// query_incident_alerts when needed.
+			// Truncate long label values on each preview alert. Labels distinguish
+			// otherwise-identical alerts (host, region, service), so we keep the
+			// keys; the only thing we shrink is individual values that exceed the
+			// rune cap, which catches the embed-JSON-in-a-label-value pathology.
 			if includeAlerts {
 				for i := range output.Incidents {
 					for j := range output.Incidents[i].AlertsPreview {
-						output.Incidents[i].AlertsPreview[j].Labels = nil
+						truncateLabelValues(output.Incidents[i].AlertsPreview[j].Labels, alertLabelValueMaxRunes)
 					}
 				}
 			}
