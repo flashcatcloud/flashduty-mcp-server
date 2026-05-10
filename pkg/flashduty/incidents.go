@@ -267,7 +267,7 @@ func CreateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 		}
 }
 
-const updateIncidentDescription = `Update incident title, description, severity, or custom fields. Only provided fields are updated.`
+const updateIncidentDescription = `Update incident built-in fields (title, description, severity, impact, root_cause, resolution) and/or custom fields. Only provided fields are updated. Built-in fields are sent in a single round-trip.`
 
 // UpdateIncident creates a tool to update an incident
 func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -279,8 +279,11 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			}),
 			mcp.WithString("incident_id", mcp.Required(), mcp.Description("The incident ID to update.")),
 			mcp.WithString("title", mcp.Description("New incident title. Length: 3-200 characters."), mcp.MinLength(3), mcp.MaxLength(200)),
-			mcp.WithString("description", mcp.Description("New incident description. Max 6144 characters."), mcp.MaxLength(6144)),
+			mcp.WithString("description", mcp.Description("New incident description. Length: 3-6144 characters."), mcp.MinLength(3), mcp.MaxLength(6144)),
 			mcp.WithString("severity", mcp.Description("New severity level."), mcp.Enum("Info", "Warning", "Critical")),
+			mcp.WithString("impact", mcp.Description("Business/user impact statement. Length: 3-6144 characters."), mcp.MinLength(3), mcp.MaxLength(6144)),
+			mcp.WithString("root_cause", mcp.Description("Root cause of the incident. Length: 3-6144 characters."), mcp.MinLength(3), mcp.MaxLength(6144)),
+			mcp.WithString("resolution", mcp.Description("How the incident was resolved. Length: 3-6144 characters."), mcp.MinLength(3), mcp.MaxLength(6144)),
 			mcp.WithString("custom_fields", mcp.Description("JSON object of custom field updates. Format: {\"field_name\": \"value\"}. Field names must match ^[a-z][a-z0-9_]*$. Use query_fields to discover available fields.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
@@ -296,6 +299,9 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			title, _ := OptionalParam[string](request, "title")
 			description, _ := OptionalParam[string](request, "description")
 			severity, _ := OptionalParam[string](request, "severity")
+			impact, _ := OptionalParam[string](request, "impact")
+			rootCause, _ := OptionalParam[string](request, "root_cause")
+			resolution, _ := OptionalParam[string](request, "resolution")
 			customFieldsStr, _ := OptionalParam[string](request, "custom_fields")
 
 			input := &sdk.UpdateIncidentInput{
@@ -303,6 +309,9 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				Title:       title,
 				Description: description,
 				Severity:    severity,
+				Impact:      impact,
+				RootCause:   rootCause,
+				Resolution:  resolution,
 			}
 
 			// Parse custom fields JSON if provided
