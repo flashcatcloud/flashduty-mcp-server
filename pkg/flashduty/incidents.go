@@ -16,7 +16,7 @@ import (
 
 const defaultQueryLimit = 20
 
-const queryIncidentsDescription = `Query incidents by IDs, time range, status, severity, channel, or free-text query. Returns enriched data with names.`
+const queryIncidentsDescription = `Query incidents by IDs, time range, status, severity, channel, or free-text query. Returns the incident list with an alerts_total count per incident; for the actual alert objects of one or more incidents, call query_incident_alerts(incident_ids=...).`
 
 // QueryIncidents creates a tool to query incidents with enriched data
 func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -34,7 +34,6 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			WithUntil(),
 			mcp.WithString("query", mcp.Description("Free-text search across title, labels, and content (Doris full-text). A 24-char hex string is resolved as an incident ID; a 6-char string is resolved as an incident num. Prefer this over picking exact filter values when the user gives a fuzzy keyword."), mcp.MaxLength(200)),
 			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
-			mcp.WithBoolean("include_alerts", mcp.Description("Whether to include alerts preview (first 20 alerts with total count)."), mcp.DefaultBool(true)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -53,28 +52,29 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("invalid since: %v", err)), nil
 			}
-			endTime, err := timeutil.ParseAny(args["until"])
+			endTime, err := parseUntilArg(args["until"])
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("invalid until: %v", err)), nil
-			}
-
-			includeAlerts := true
-			if v, ok := args["include_alerts"].(bool); ok {
-				includeAlerts = v
 			}
 
 			if limit <= 0 {
 				limit = defaultQueryLimit
 			}
 
+			// IncludeAlerts is intentionally not exposed: per-incident alert
+			// payloads multiply across rows and routinely dominate the context
+			// window. Callers that want alert details for specific incidents
+			// should call query_incident_alerts(incident_ids=...) instead, which
+			// accepts a comma-separated list and keeps the two concerns cleanly
+			// separated. The alerts_total count on each incident is enough to
+			// gauge volume from this tool.
 			input := &sdk.ListIncidentsInput{
-				Progress:      progress,
-				Severity:      severity,
-				StartTime:     startTime,
-				EndTime:       endTime,
-				Query:         query,
-				Limit:         limit,
-				IncludeAlerts: includeAlerts,
+				Progress:  progress,
+				Severity:  severity,
+				StartTime: startTime,
+				EndTime:   endTime,
+				Query:     query,
+				Limit:     limit,
 			}
 
 			if channelIdsStr != "" {
@@ -267,7 +267,7 @@ func CreateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 		}
 }
 
-const updateIncidentDescription = `Update incident title, description, severity, or custom fields. Only provided fields are updated.`
+const updateIncidentDescription = `Update incident built-in fields (title, description, severity, impact, root_cause, resolution) and/or custom fields. Only provided fields are updated. Built-in fields are sent in a single round-trip.`
 
 // UpdateIncident creates a tool to update an incident
 func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -279,8 +279,11 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			}),
 			mcp.WithString("incident_id", mcp.Required(), mcp.Description("The incident ID to update.")),
 			mcp.WithString("title", mcp.Description("New incident title. Length: 3-200 characters."), mcp.MinLength(3), mcp.MaxLength(200)),
-			mcp.WithString("description", mcp.Description("New incident description. Max 6144 characters."), mcp.MaxLength(6144)),
+			mcp.WithString("description", mcp.Description("New incident description. Length: 3-6144 characters."), mcp.MinLength(3), mcp.MaxLength(6144)),
 			mcp.WithString("severity", mcp.Description("New severity level."), mcp.Enum("Info", "Warning", "Critical")),
+			mcp.WithString("impact", mcp.Description("Business/user impact statement. Length: 3-6144 characters."), mcp.MinLength(3), mcp.MaxLength(6144)),
+			mcp.WithString("root_cause", mcp.Description("Root cause of the incident. Length: 3-6144 characters."), mcp.MinLength(3), mcp.MaxLength(6144)),
+			mcp.WithString("resolution", mcp.Description("How the incident was resolved. Length: 3-6144 characters."), mcp.MinLength(3), mcp.MaxLength(6144)),
 			mcp.WithString("custom_fields", mcp.Description("JSON object of custom field updates. Format: {\"field_name\": \"value\"}. Field names must match ^[a-z][a-z0-9_]*$. Use query_fields to discover available fields.")),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
@@ -296,6 +299,9 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			title, _ := OptionalParam[string](request, "title")
 			description, _ := OptionalParam[string](request, "description")
 			severity, _ := OptionalParam[string](request, "severity")
+			impact, _ := OptionalParam[string](request, "impact")
+			rootCause, _ := OptionalParam[string](request, "root_cause")
+			resolution, _ := OptionalParam[string](request, "resolution")
 			customFieldsStr, _ := OptionalParam[string](request, "custom_fields")
 
 			input := &sdk.UpdateIncidentInput{
@@ -303,6 +309,9 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				Title:       title,
 				Description: description,
 				Severity:    severity,
+				Impact:      impact,
+				RootCause:   rootCause,
+				Resolution:  resolution,
 			}
 
 			// Parse custom fields JSON if provided

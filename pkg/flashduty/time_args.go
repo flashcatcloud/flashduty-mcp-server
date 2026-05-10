@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/flashcatcloud/flashduty-mcp-server/internal/timeutil"
 )
 
 // MaxTimeWindow is the backend's hard cap on (until-since) for incident/alert/change
@@ -39,6 +41,22 @@ func WithSince(opts ...mcp.PropertyOption) mcp.ToolOption {
 
 func WithUntil(opts ...mcp.PropertyOption) mcp.ToolOption {
 	return mcp.WithString("until", append([]mcp.PropertyOption{mcp.Description(UntilDescription)}, opts...)...)
+}
+
+// parseUntilArg parses an "until" argument, defaulting to "now" when missing
+// or empty. UntilDescription advertises this default, but timeutil.ParseAny
+// on nil returns 0 (its sentinel for "not provided"), so callers must resolve
+// the default explicitly here — otherwise validateTimeWindow rejects the call
+// with "both since and until are required", a common LLM failure mode where
+// the model supplies only `since` and assumes the documented default kicks in.
+func parseUntilArg(v any) (int64, error) {
+	if v == nil {
+		return time.Now().Unix(), nil
+	}
+	if s, ok := v.(string); ok && s == "" {
+		return time.Now().Unix(), nil
+	}
+	return timeutil.ParseAny(v)
 }
 
 // validateTimeWindow enforces the same constraints the backend would, but with

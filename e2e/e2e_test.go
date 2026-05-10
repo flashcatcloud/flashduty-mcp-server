@@ -423,7 +423,6 @@ func TestQueryIncidents(t *testing.T) {
 		"since":          strconv.FormatInt(startTime, 10),
 		"until":          strconv.FormatInt(now, 10),
 		"limit":          10,
-		"include_alerts": false,
 	})
 
 	var result struct {
@@ -605,7 +604,6 @@ func TestIncidentLifecycle(t *testing.T) {
 	t.Log("Querying the created incident...")
 	queryResponseText := callTool(t, mcpClient, "query_incidents", map[string]any{
 		"incident_ids":   incidentID,
-		"include_alerts": false,
 	})
 
 	var queryResult struct {
@@ -643,7 +641,6 @@ func TestIncidentLifecycle(t *testing.T) {
 	t.Log("Verifying incident is in Processing state...")
 	queryResponseText = callTool(t, mcpClient, "query_incidents", map[string]any{
 		"incident_ids":   incidentID,
-		"include_alerts": false,
 	})
 	unmarshalToolResponse(t, queryResponseText, &queryResult)
 
@@ -669,7 +666,6 @@ func TestIncidentLifecycle(t *testing.T) {
 	t.Log("Verifying incident is Closed...")
 	queryResponseText = callTool(t, mcpClient, "query_incidents", map[string]any{
 		"incident_ids":   incidentID,
-		"include_alerts": false,
 	})
 	unmarshalToolResponse(t, queryResponseText, &queryResult)
 
@@ -825,7 +821,6 @@ func TestUpdateIncident(t *testing.T) {
 	t.Log("Verifying the update...")
 	queryResponseText := callTool(t, mcpClient, "query_incidents", map[string]any{
 		"incident_ids":   incidentID,
-		"include_alerts": false,
 	})
 
 	var queryResult struct {
