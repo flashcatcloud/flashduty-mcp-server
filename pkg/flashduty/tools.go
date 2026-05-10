@@ -28,10 +28,9 @@ func DefaultToolsetGroup(getClient GetFlashdutyClientFn, readOnly bool, t transl
 		)
 	group.AddToolset(incidents)
 
-	// Alerts toolset (2 tools)
+	// Alerts toolset (1 tool)
 	alerts := toolsets.NewToolset("alerts", "Alert query tools").
 		AddReadTools(
-			toolsets.NewServerTool(QueryAlerts(getClient, t)),
 			toolsets.NewServerTool(QueryAlertEvents(getClient, t)),
 		)
 	group.AddToolset(alerts)

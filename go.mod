@@ -50,3 +50,5 @@ require (
 	golang.org/x/text v0.26.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/flashcatcloud/flashduty-sdk => github.com/ysyneu/flashduty-sdk v0.7.1-0.20260510030603-7a1f724ceb79

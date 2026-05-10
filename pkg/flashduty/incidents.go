@@ -16,7 +16,7 @@ import (
 
 const defaultQueryLimit = 20
 
-const queryIncidentsDescription = `Query incidents by IDs, time range, status, severity, or channel. Returns enriched data with names.`
+const queryIncidentsDescription = `Query incidents by IDs, time range, status, severity, channel, or free-text query. Returns enriched data with names.`
 
 // QueryIncidents creates a tool to query incidents with enriched data
 func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -32,7 +32,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			mcp.WithString("channel_ids", mcp.Description("Comma-separated collaboration space IDs to filter by. Backend expects an array — singular channel_id is silently ignored.")),
 			WithSince(),
 			WithUntil(),
-			mcp.WithString("title", mcp.Description("Keyword search in incident title.")),
+			mcp.WithString("query", mcp.Description("Free-text search across title, labels, and content (Doris full-text). A 24-char hex string is resolved as an incident ID; a 6-char string is resolved as an incident num. Prefer this over picking exact filter values when the user gives a fuzzy keyword."), mcp.MaxLength(200)),
 			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 			mcp.WithBoolean("include_alerts", mcp.Description("Whether to include alerts preview (first 20 alerts with total count)."), mcp.DefaultBool(true)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -41,13 +41,12 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				return nil, fmt.Errorf("failed to get Flashduty client: %w", err)
 			}
 
-			// Extract parameters
+			args := request.GetArguments()
 			incidentIdsStr, _ := OptionalParam[string](request, "incident_ids")
 			progress, _ := OptionalParam[string](request, "progress")
 			severity, _ := OptionalParam[string](request, "severity")
 			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
-			args := request.GetArguments()
-			title, _ := OptionalParam[string](request, "title")
+			query, _ := OptionalParam[string](request, "query")
 			limit, _ := OptionalInt(request, "limit")
 
 			startTime, err := timeutil.ParseAny(args["since"])
@@ -73,7 +72,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				Severity:      severity,
 				StartTime:     startTime,
 				EndTime:       endTime,
-				Title:         title,
+				Query:         query,
 				Limit:         limit,
 				IncludeAlerts: includeAlerts,
 			}

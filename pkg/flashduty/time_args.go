@@ -12,8 +12,8 @@ import (
 // so the LLM gets a guided error before the round-trip.
 const MaxTimeWindow = 31 * 24 * time.Hour
 
-// SinceDescription / UntilDescription are reused across query_incidents,
-// query_alerts, and query_changes. The wording is tuned for LLM callers that
+// SinceDescription / UntilDescription are reused across query_incidents
+// and query_changes. The wording is tuned for LLM callers that
 // otherwise pick absolute dates from stale training data and silently query
 // the wrong year — see the three failure modes documented at
 // https://github.com/flashcatcloud/flashduty-mcp-server/pull/50.
