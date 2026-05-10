@@ -16,35 +16,7 @@ import (
 
 const defaultQueryLimit = 20
 
-// alertsPreviewLimit caps how many alerts per incident populate alerts_preview
-// when include_alerts=true. Picked empirically: large enough to be a useful
-// sample for "what's burning right now" reasoning, small enough that a 50-row
-// list with rich label sets doesn't blow past the context window. The full
-// list is always available via query_incident_alerts on a single incident.
-const alertsPreviewLimit = 5
-
-// alertLabelValueMaxRunes caps the length of each label *value* in an alert
-// preview. Keys are kept intact: when 5 alerts share the same title, labels
-// are usually the only signal that distinguishes them (different host,
-// region, service), so stripping labels outright loses the information the
-// LLM needs. Long values come from one specific pathology — accounts that
-// embed multi-KB JSON blobs inside a single label value — and truncating
-// just those keeps the dimension set readable without bloating the response.
-const alertLabelValueMaxRunes = 200
-
-// truncateLabelValues caps each label value at maxRunes runes (rune-aware so
-// CJK is not mangled), appending "..." when truncated. Operates in place;
-// nil-safe.
-func truncateLabelValues(labels map[string]string, maxRunes int) {
-	for k, v := range labels {
-		runes := []rune(v)
-		if len(runes) > maxRunes {
-			labels[k] = string(runes[:maxRunes]) + "..."
-		}
-	}
-}
-
-const queryIncidentsDescription = `Query incidents by IDs, time range, status, severity, channel, or free-text query. Returns enriched data with names.`
+const queryIncidentsDescription = `Query incidents by IDs, time range, status, severity, channel, or free-text query. Returns the incident list with an alerts_total count per incident; for the actual alert objects of one or more incidents, call query_incident_alerts(incident_ids=...).`
 
 // QueryIncidents creates a tool to query incidents with enriched data
 func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -62,7 +34,6 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			WithUntil(),
 			mcp.WithString("query", mcp.Description("Free-text search across title, labels, and content (Doris full-text). A 24-char hex string is resolved as an incident ID; a 6-char string is resolved as an incident num. Prefer this over picking exact filter values when the user gives a fuzzy keyword."), mcp.MaxLength(200)),
 			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
-			mcp.WithBoolean("include_alerts", mcp.Description("Include a preview of up to 5 alerts per incident (alert_id, title, severity, status, start_time, labels). Long label values are truncated to 200 chars so the dimension keys are still visible without bloating the response. Defaults to false because the alert payload multiplies across rows and can dominate the context window. RECOMMENDED ONLY when you have already narrowed to one or a few incidents (e.g. via `incident_ids`); for any time-range / filter query that may return many incidents, leave this off and use `alerts_total` to gauge volume — then drill into a specific incident with `query_incident_alerts` for the untruncated full list."), mcp.DefaultBool(false)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -86,24 +57,24 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				return mcp.NewToolResultError(fmt.Sprintf("invalid until: %v", err)), nil
 			}
 
-			includeAlerts := false
-			if v, ok := args["include_alerts"].(bool); ok {
-				includeAlerts = v
-			}
-
 			if limit <= 0 {
 				limit = defaultQueryLimit
 			}
 
+			// IncludeAlerts is intentionally not exposed: per-incident alert
+			// payloads multiply across rows and routinely dominate the context
+			// window. Callers that want alert details for specific incidents
+			// should call query_incident_alerts(incident_ids=...) instead, which
+			// accepts a comma-separated list and keeps the two concerns cleanly
+			// separated. The alerts_total count on each incident is enough to
+			// gauge volume from this tool.
 			input := &sdk.ListIncidentsInput{
-				Progress:           progress,
-				Severity:           severity,
-				StartTime:          startTime,
-				EndTime:            endTime,
-				Query:              query,
-				Limit:              limit,
-				IncludeAlerts:      includeAlerts,
-				AlertsPreviewLimit: alertsPreviewLimit,
+				Progress:  progress,
+				Severity:  severity,
+				StartTime: startTime,
+				EndTime:   endTime,
+				Query:     query,
+				Limit:     limit,
 			}
 
 			if channelIdsStr != "" {
@@ -130,18 +101,6 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			output, err := client.ListIncidents(ctx, input)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve incidents: %v", err)), nil
-			}
-
-			// Truncate long label values on each preview alert. Labels distinguish
-			// otherwise-identical alerts (host, region, service), so we keep the
-			// keys; the only thing we shrink is individual values that exceed the
-			// rune cap, which catches the embed-JSON-in-a-label-value pathology.
-			if includeAlerts {
-				for i := range output.Incidents {
-					for j := range output.Incidents[i].AlertsPreview {
-						truncateLabelValues(output.Incidents[i].AlertsPreview[j].Labels, alertLabelValueMaxRunes)
-					}
-				}
 			}
 
 			return MarshalResult(addTruncationHint(map[string]any{

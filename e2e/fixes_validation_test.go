@@ -26,7 +26,6 @@ func TestQueryIncidentsChannelFilter(t *testing.T) {
 		"since":          strconv.FormatInt(startTime, 10),
 		"until":          strconv.FormatInt(now, 10),
 		"limit":          100,
-		"include_alerts": false,
 	})
 	var allResp struct {
 		Incidents []struct {
@@ -62,7 +61,6 @@ func TestQueryIncidentsChannelFilter(t *testing.T) {
 		"since":          strconv.FormatInt(startTime, 10),
 		"until":          strconv.FormatInt(now, 10),
 		"limit":          100,
-		"include_alerts": false,
 		"channel_ids":    strconv.FormatInt(target, 10),
 	})
 	var filtered struct {
