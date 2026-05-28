@@ -41,16 +41,9 @@ func MarshalResult(v any) *mcp.CallToolResult {
 
 // MarshalResultWithFormat serializes the given value using the specified format
 func MarshalResultWithFormat(v any, format OutputFormat) *mcp.CallToolResult {
-	data, err := sdk.Marshal(v, format)
+	data, err := sdk.Marshal(humanizeTimestamps(v), format)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err))
 	}
-	return mcp.NewToolResultText(string(data))
-}
-
-// MarshalledTextResult is the original function that always uses JSON.
-// Kept for backward compatibility. New code should use MarshalResult.
-func MarshalledTextResult(v any) *mcp.CallToolResult {
-	data, _ := sdk.Marshal(v, OutputFormatJSON)
 	return mcp.NewToolResultText(string(data))
 }
