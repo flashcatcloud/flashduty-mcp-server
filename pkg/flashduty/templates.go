@@ -2,15 +2,21 @@ package flashduty
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 
 	sdk "github.com/flashcatcloud/flashduty-sdk"
+	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
+
+// presetTemplateID addresses the built-in preset notification template in
+// go-flashduty's /template/info endpoint.
+const presetTemplateID = "000000000000000000000001"
 
 // --- Tool 1: get_preset_template ---
 
@@ -46,17 +52,48 @@ func GetPresetTemplate(getClient GetFlashdutyClientFn, t translations.Translatio
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			input := &sdk.GetPresetTemplateInput{
-				Channel: channel,
+			fieldName, ok := sdk.TemplateChannels[channel]
+			if !ok {
+				return mcp.NewToolResultError(fmt.Sprintf("unknown channel: %s", channel)), nil
 			}
 
-			output, err := client.GetPresetTemplate(ctx, input)
+			item, _, err := client.New.NotificationTemplates.ReadInfo(ctx, &flashduty.TemplateIDRequest{
+				TemplateID: presetTemplateID,
+			})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to fetch preset template: %v", err)), nil
 			}
 
-			return MarshalResult(output), nil
+			// ReadInfo returns every channel's template on one TemplateItem;
+			// pluck the requested channel's code by its JSON field name.
+			templateCode := templateCodeForChannel(item, fieldName)
+			if templateCode == "" {
+				return mcp.NewToolResultError(fmt.Sprintf("no preset template found for channel: %s", channel)), nil
+			}
+
+			return MarshalResult(map[string]any{
+				"channel":       channel,
+				"field_name":    fieldName,
+				"template_code": templateCode,
+			}), nil
 		}
+}
+
+// templateCodeForChannel extracts the per-channel template source from a
+// TemplateItem by the channel's JSON field name (e.g. "dingtalk", "email").
+func templateCodeForChannel(item *flashduty.TemplateItem, fieldName string) string {
+	b, err := json.Marshal(item)
+	if err != nil {
+		return ""
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(b, &fields); err != nil {
+		return ""
+	}
+	if v, ok := fields[fieldName].(string); ok {
+		return v
+	}
+	return ""
 }
 
 // --- Tool 2: validate_template ---
@@ -107,12 +144,14 @@ func ValidateTemplate(getClient GetFlashdutyClientFn, t translations.Translation
 				IncidentID:   incidentID,
 			}
 
-			output, err := client.ValidateTemplate(ctx, input)
+			// TODO: 待 go-flashduty 覆盖 /change/list,/template/preview,/status-page/list
+			// 后切换并删除老 SDK 依赖。/template/preview is not yet in go-flashduty.
+			output, err := client.Legacy.ValidateTemplate(ctx, input)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to validate template: %v", err)), nil
 			}
 
-			return MarshalResult(output), nil
+			return MarshalLegacyResult(output), nil
 		}
 }
 

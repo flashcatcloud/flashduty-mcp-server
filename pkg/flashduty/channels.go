@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
+	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
@@ -32,8 +32,10 @@ func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHel
 			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
 			name, _ := OptionalParam[string](request, "name")
 
-			input := &sdk.ListChannelsInput{
-				Name: name,
+			// Map name to the free-text Query (substring match against
+			// name/description) rather than ChannelName, which is exact-match.
+			req := &flashduty.ListChannelsRequest{
+				Query: name,
 			}
 
 			// Parse channel IDs if provided
@@ -47,18 +49,19 @@ func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHel
 				for i, id := range channelIDs {
 					int64IDs[i] = int64(id)
 				}
-				input.ChannelIDs = int64IDs
+				req.ChannelIDs = int64IDs
 			}
 
-			output, err := client.ListChannels(ctx, input)
+			out, _, err := client.New.Channels.ChannelList(ctx, req)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve channels: %v", err)), nil
 			}
 
+			total := int(out.Total)
 			return MarshalResult(addTruncationHint(map[string]any{
-				"channels": output.Channels,
-				"total":    output.Total,
-			}, len(output.Channels), output.Total)), nil
+				"channels": out.Items,
+				"total":    total,
+			}, len(out.Items), total)), nil
 		}
 }
 
@@ -84,14 +87,18 @@ func QueryEscalationRules(getClient GetFlashdutyClientFn, t translations.Transla
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			output, err := client.ListEscalationRules(ctx, int64(channelID))
+			out, _, err := client.New.Channels.ChannelEscalateRuleList(ctx, &flashduty.ChannelScopedListRequest{
+				ChannelID: int64(channelID),
+			})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to query escalation rules: %v", err)), nil
 			}
 
+			// go-flashduty returns the full rule set without a separate total.
+			total := len(out.Items)
 			return MarshalResult(addTruncationHint(map[string]any{
-				"rules": output.Rules,
-				"total": output.Total,
-			}, len(output.Rules), output.Total)), nil
+				"rules": out.Items,
+				"total": total,
+			}, total, total)), nil
 		}
 }

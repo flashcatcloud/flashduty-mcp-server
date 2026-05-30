@@ -1,27 +1,50 @@
 package flashduty
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
+	toon "github.com/toon-format/toon-go"
+
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// OutputFormat is a type alias for the SDK's OutputFormat.
-type OutputFormat = sdk.OutputFormat
+// OutputFormat defines the serialization format for tool results.
+type OutputFormat string
 
 const (
 	// OutputFormatJSON uses standard JSON serialization (default)
-	OutputFormatJSON = sdk.OutputFormatJSON
+	OutputFormatJSON OutputFormat = "json"
 	// OutputFormatTOON uses Token-Oriented Object Notation for reduced token usage
-	OutputFormatTOON = sdk.OutputFormatTOON
+	OutputFormatTOON OutputFormat = "toon"
 )
 
 // ParseOutputFormat converts a string to OutputFormat, defaulting to JSON.
-var ParseOutputFormat = sdk.ParseOutputFormat
+func ParseOutputFormat(s string) OutputFormat {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "toon":
+		return OutputFormatTOON
+	default:
+		return OutputFormatJSON
+	}
+}
+
+// String returns the string representation of OutputFormat.
+func (f OutputFormat) String() string { return string(f) }
+
+// marshal serializes v using the given format.
+func marshal(v any, format OutputFormat) ([]byte, error) {
+	switch format {
+	case OutputFormatTOON:
+		return toon.Marshal(v)
+	default:
+		return json.Marshal(v)
+	}
+}
 
 // outputFormat is the current output format setting (package-level for simplicity)
-var outputFormat OutputFormat = OutputFormatJSON
+var outputFormat = OutputFormatJSON
 
 // SetOutputFormat sets the global output format
 func SetOutputFormat(format OutputFormat) {
@@ -33,15 +56,28 @@ func GetOutputFormat() OutputFormat {
 	return outputFormat
 }
 
-// MarshalResult serializes the given value according to the current output format
-// and returns it as a text result for MCP tool response.
+// MarshalResult serializes the given value according to the current output
+// format and returns it as a text result for an MCP tool response.
+//
+// Values come from go-flashduty, whose Timestamp/TimestampMilli types already
+// render absolute instants as RFC3339, so no post-processing is needed.
 func MarshalResult(v any) *mcp.CallToolResult {
-	return MarshalResultWithFormat(v, outputFormat)
+	return marshalResultWithFormat(v, outputFormat)
 }
 
-// MarshalResultWithFormat serializes the given value using the specified format
-func MarshalResultWithFormat(v any, format OutputFormat) *mcp.CallToolResult {
-	data, err := sdk.Marshal(humanizeTimestamps(v), format)
+// MarshalLegacyResult is MarshalResult for the few tools still backed by the
+// hand-written flashduty-sdk (query_changes, validate_template,
+// query_status_pages). Those return bare Unix-integer time fields, so this
+// variant runs humanizeTimestamps to render them as RFC3339 before encoding.
+//
+// TODO: delete once go-flashduty covers /change/list, /template/preview, and
+// /status-page/list and the pending tools migrate to the typed Timestamp.
+func MarshalLegacyResult(v any) *mcp.CallToolResult {
+	return marshalResultWithFormat(humanizeTimestamps(v), outputFormat)
+}
+
+func marshalResultWithFormat(v any, format OutputFormat) *mcp.CallToolResult {
+	data, err := marshal(v, format)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to marshal result: %v", err))
 	}

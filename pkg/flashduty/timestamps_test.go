@@ -8,12 +8,14 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// TestMarshalResult_HumanizesTimestamps locks the wiring: every tool result
-// routed through MarshalResultWithFormat must have its timestamps humanized, so
-// a raw Unix integer never reaches the model.
-func TestMarshalResult_HumanizesTimestamps(t *testing.T) {
+// TestMarshalLegacyResult_HumanizesTimestamps locks the wiring for the
+// legacy/pending tools: results routed through MarshalLegacyResult must have
+// their raw Unix-integer timestamps humanized, so a bare epoch never reaches
+// the model. (Migrated tools use go-flashduty's Timestamp type, which already
+// renders RFC3339, and go through MarshalResult without this post-processing.)
+func TestMarshalLegacyResult_HumanizesTimestamps(t *testing.T) {
 	const ts = 1748419200
-	res := MarshalResultWithFormat(map[string]any{"start_time": ts}, OutputFormatJSON)
+	res := MarshalLegacyResult(map[string]any{"start_time": ts})
 	tc, ok := mcp.AsTextContent(res.Content[0])
 	if !ok {
 		t.Fatalf("expected text content, got %#v", res.Content[0])

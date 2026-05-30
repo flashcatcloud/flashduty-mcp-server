@@ -87,12 +87,14 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				}
 			}
 
-			output, err := client.ListChanges(ctx, input)
+			// TODO: 待 go-flashduty 覆盖 /change/list,/template/preview,/status-page/list
+			// 后切换并删除老 SDK 依赖。/change/list is not yet in go-flashduty.
+			output, err := client.Legacy.ListChanges(ctx, input)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve changes: %v", err)), nil
 			}
 
-			return MarshalResult(addTruncationHint(map[string]any{
+			return MarshalLegacyResult(addTruncationHint(map[string]any{
 				"changes": output.Changes,
 				"total":   output.Total,
 			}, len(output.Changes), output.Total)), nil

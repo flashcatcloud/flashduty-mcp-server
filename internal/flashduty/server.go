@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
@@ -61,7 +60,7 @@ type FlashdutyConfig struct {
 func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 	// When a client send an initialize request, update the user agent to include the client info.
 	beforeInit := func(ctx context.Context, _ any, message *mcp.InitializeRequest) {
-		_, client, err := getClient(ctx, cfg, cfg.Version)
+		_, clients, err := getClient(ctx, cfg, cfg.Version)
 		if err != nil {
 			// Cannot return error here, just log it.
 			// For HTTP server, the APP key is per-request, so it might not be available
@@ -78,7 +77,8 @@ func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 			message.Params.ClientInfo.Name,
 			message.Params.ClientInfo.Version,
 		)
-		client.SetUserAgent(userAgent)
+		clients.New.UserAgent = userAgent
+		clients.Legacy.SetUserAgent(userAgent)
 	}
 
 	if len(cfg.EnabledToolsets) == 0 {
@@ -129,7 +129,7 @@ func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 
 	flashdutyServer := server.NewMCPServer("flashduty-mcp-server", cfg.Version, server.WithHooks(hooks))
 
-	getClientFn := func(ctx context.Context) (context.Context, *sdk.Client, error) {
+	getClientFn := func(ctx context.Context) (context.Context, *flashduty.Clients, error) {
 		return getClient(ctx, cfg, cfg.Version)
 	}
 

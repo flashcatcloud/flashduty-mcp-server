@@ -420,21 +420,24 @@ func TestQueryIncidents(t *testing.T) {
 
 	t.Log("Querying incidents from the last 7 days...")
 	responseText := callTool(t, mcpClient, "query_incidents", map[string]any{
-		"since":          strconv.FormatInt(startTime, 10),
-		"until":          strconv.FormatInt(now, 10),
-		"limit":          10,
+		"since": strconv.FormatInt(startTime, 10),
+		"until": strconv.FormatInt(now, 10),
+		"limit": 10,
 	})
 
 	var result struct {
 		Incidents []struct {
-			IncidentID  string `json:"incident_id"`
-			Title       string `json:"title"`
-			Severity    string `json:"severity"`
-			Progress    string `json:"progress"`
-			ChannelID   int64  `json:"channel_id"`
-			ChannelName string `json:"channel_name,omitempty"`
-			CreatedAt   int64  `json:"created_at"`
-			AlertsTotal int    `json:"alerts_total,omitempty"`
+			IncidentID string `json:"incident_id"`
+			Title      string `json:"title"`
+			// go-flashduty renames severity -> incident_severity and renders
+			// created_at as an RFC3339 string (Timestamp type) instead of a
+			// Unix integer; alerts_total is now the server-side alert_cnt.
+			IncidentSeverity string `json:"incident_severity"`
+			Progress         string `json:"progress"`
+			ChannelID        int64  `json:"channel_id"`
+			ChannelName      string `json:"channel_name,omitempty"`
+			CreatedAt        string `json:"created_at"`
+			AlertCnt         int    `json:"alert_cnt,omitempty"`
 		} `json:"incidents"`
 		Total int `json:"total"`
 	}
@@ -603,15 +606,15 @@ func TestIncidentLifecycle(t *testing.T) {
 	// Step 2: Query the incident to verify it was created
 	t.Log("Querying the created incident...")
 	queryResponseText := callTool(t, mcpClient, "query_incidents", map[string]any{
-		"incident_ids":   incidentID,
+		"incident_ids": incidentID,
 	})
 
 	var queryResult struct {
 		Incidents []struct {
-			IncidentID string `json:"incident_id"`
-			Title      string `json:"title"`
-			Progress   string `json:"progress"`
-			Severity   string `json:"severity"`
+			IncidentID       string `json:"incident_id"`
+			Title            string `json:"title"`
+			Progress         string `json:"progress"`
+			IncidentSeverity string `json:"incident_severity"`
 		} `json:"incidents"`
 		Total int `json:"total"`
 	}
@@ -640,7 +643,7 @@ func TestIncidentLifecycle(t *testing.T) {
 	// Step 4: Verify the incident is now in Processing state
 	t.Log("Verifying incident is in Processing state...")
 	queryResponseText = callTool(t, mcpClient, "query_incidents", map[string]any{
-		"incident_ids":   incidentID,
+		"incident_ids": incidentID,
 	})
 	unmarshalToolResponse(t, queryResponseText, &queryResult)
 
@@ -665,7 +668,7 @@ func TestIncidentLifecycle(t *testing.T) {
 	// Step 6: Verify the incident is now Closed
 	t.Log("Verifying incident is Closed...")
 	queryResponseText = callTool(t, mcpClient, "query_incidents", map[string]any{
-		"incident_ids":   incidentID,
+		"incident_ids": incidentID,
 	})
 	unmarshalToolResponse(t, queryResponseText, &queryResult)
 
@@ -820,7 +823,7 @@ func TestUpdateIncident(t *testing.T) {
 	// Verify the update
 	t.Log("Verifying the update...")
 	queryResponseText := callTool(t, mcpClient, "query_incidents", map[string]any{
-		"incident_ids":   incidentID,
+		"incident_ids": incidentID,
 	})
 
 	var queryResult struct {

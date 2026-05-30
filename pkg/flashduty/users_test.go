@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
+	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
@@ -34,13 +34,13 @@ func TestQueryTeamsByIDsPreservesLegacyItemsShape(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := sdk.NewClient("test-key", sdk.WithBaseURL(ts.URL))
+	client, err := flashduty.NewClient("test-key", flashduty.WithBaseURL(ts.URL))
 	if err != nil {
-		t.Fatalf("new sdk client: %v", err)
+		t.Fatalf("new go-flashduty client: %v", err)
 	}
 
-	_, handler := QueryTeams(func(ctx context.Context) (context.Context, *sdk.Client, error) {
-		return ctx, client, nil
+	_, handler := QueryTeams(func(ctx context.Context) (context.Context, *Clients, error) {
+		return ctx, &Clients{New: client}, nil
 	}, translations.NullTranslationHelper)
 
 	result, err := handler(context.Background(), mcp.CallToolRequest{

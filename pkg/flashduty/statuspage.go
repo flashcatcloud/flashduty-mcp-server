@@ -2,9 +2,13 @@ package flashduty
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	sdk "github.com/flashcatcloud/flashduty-sdk"
+	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
@@ -38,12 +42,14 @@ func QueryStatusPages(getClient GetFlashdutyClientFn, t translations.Translation
 				}
 			}
 
-			pages, err := client.ListStatusPages(ctx, pageIDs)
+			// TODO: 待 go-flashduty 覆盖 /change/list,/template/preview,/status-page/list
+			// 后切换并删除老 SDK 依赖。/status-page/list is not yet in go-flashduty.
+			pages, err := client.Legacy.ListStatusPages(ctx, pageIDs)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("failed to list status pages: %v", err)), nil
 			}
 
-			return MarshalResult(map[string]any{
+			return MarshalLegacyResult(map[string]any{
 				"pages": pages,
 				"total": len(pages),
 			}), nil
@@ -82,7 +88,13 @@ func ListStatusChanges(getClient GetFlashdutyClientFn, t translations.Translatio
 				return mcp.NewToolResultError("type must be 'incident' or 'maintenance'"), nil
 			}
 
-			output, err := client.ListStatusChanges(ctx, &sdk.ListStatusChangesInput{
+			// This tool lists *active* changes via /status-page/change/active/list,
+			// which go-flashduty does not expose (its ChangeList hits the general
+			// /status-page/change/list, which requires a single mandatory status
+			// and a time window — different semantics). Keep the legacy SDK until
+			// go-flashduty adds the active-list endpoint.
+			// TODO: 待 go-flashduty 覆盖 /status-page/change/active/list 后切换并删除老 SDK 依赖。
+			output, err := client.Legacy.ListStatusChanges(ctx, &sdk.ListStatusChangesInput{
 				PageID:     int64(pageID),
 				ChangeType: changeType,
 			})
@@ -90,7 +102,7 @@ func ListStatusChanges(getClient GetFlashdutyClientFn, t translations.Translatio
 				return mcp.NewToolResultError(fmt.Sprintf("failed to list status changes: %v", err)), nil
 			}
 
-			return MarshalResult(addTruncationHint(map[string]any{
+			return MarshalLegacyResult(addTruncationHint(map[string]any{
 				"changes": output.Changes,
 				"total":   output.Total,
 			}, len(output.Changes), output.Total)), nil
@@ -134,20 +146,67 @@ func CreateStatusIncident(getClient GetFlashdutyClientFn, t translations.Transla
 			affectedComponents, _ := OptionalParam[string](request, "affected_components")
 			notifySubscribers, _ := OptionalParam[bool](request, "notify_subscribers")
 
-			data, err := client.CreateStatusIncident(ctx, &sdk.CreateStatusIncidentInput{
-				PageID:             int64(pageID),
-				Title:              title,
-				Message:            message,
-				Status:             status,
-				AffectedComponents: affectedComponents,
-				NotifySubscribers:  notifySubscribers,
+			if status == "" {
+				status = "investigating"
+			}
+
+			// The initial update mirrors the incident: same status, the message
+			// (or the title when no message), and the affected components.
+			update := flashduty.CreateStatusPageChangeRequestUpdatesItem{
+				AtSeconds: time.Now().Unix(),
+				Status:    status,
+			}
+			if message != "" {
+				update.Description = message
+			}
+			update.ComponentChanges = parseAffectedComponents(affectedComponents)
+
+			description := message
+			if description == "" {
+				description = title
+			}
+
+			out, _, err := client.New.StatusPages.ChangeCreate(ctx, &flashduty.CreateStatusPageChangeRequest{
+				PageID:            int64(pageID),
+				Title:             title,
+				Type:              "incident",
+				Status:            status,
+				Description:       description,
+				Updates:           []flashduty.CreateStatusPageChangeRequestUpdatesItem{update},
+				NotifySubscribers: notifySubscribers,
 			})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("failed to create status incident: %v", err)), nil
 			}
 
-			return MarshalResult(data), nil
+			return MarshalResult(out), nil
 		}
+}
+
+// parseAffectedComponents parses the "id1:degraded,id2:partial_outage" syntax
+// the create_status_incident tool accepts. A bare id (no ":status") defaults to
+// partial_outage, matching the legacy behavior.
+func parseAffectedComponents(s string) []flashduty.CreateStatusPageChangeRequestUpdatesItemComponentChangesItem {
+	if s == "" {
+		return nil
+	}
+	var changes []flashduty.CreateStatusPageChangeRequestUpdatesItemComponentChangesItem
+	for _, part := range parseCommaSeparatedStrings(s) {
+		kv := strings.SplitN(part, ":", 2)
+		switch {
+		case len(kv) == 2:
+			changes = append(changes, flashduty.CreateStatusPageChangeRequestUpdatesItemComponentChangesItem{
+				ComponentID: strings.TrimSpace(kv[0]),
+				Status:      strings.TrimSpace(kv[1]),
+			})
+		case len(kv) == 1 && kv[0] != "":
+			changes = append(changes, flashduty.CreateStatusPageChangeRequestUpdatesItemComponentChangesItem{
+				ComponentID: strings.TrimSpace(kv[0]),
+				Status:      "partial_outage",
+			})
+		}
+	}
+	return changes
 }
 
 const createChangeTimelineDescription = `Add a timeline update to a status page incident or maintenance. Update status and affected components.`
@@ -195,15 +254,21 @@ func CreateChangeTimeline(getClient GetFlashdutyClientFn, t translations.Transla
 				return mcp.NewToolResultError(fmt.Sprintf("invalid at: %v", err)), nil
 			}
 
-			err = client.CreateChangeTimeline(ctx, &sdk.CreateChangeTimelineInput{
-				PageID:           int64(pageID),
-				ChangeID:         int64(changeID),
-				Message:          message,
-				AtSeconds:        atSeconds,
-				Status:           status,
-				ComponentChanges: componentChanges,
-			})
-			if err != nil {
+			req := &flashduty.CreateStatusPageChangeTimelineRequest{
+				PageID:      int64(pageID),
+				ChangeID:    int64(changeID),
+				Description: message,
+				AtSeconds:   atSeconds,
+				Status:      status,
+			}
+
+			if componentChanges != "" {
+				if err := json.Unmarshal([]byte(componentChanges), &req.ComponentChanges); err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("component_changes must be a valid JSON array: %v", err)), nil
+				}
+			}
+
+			if _, _, err := client.New.StatusPages.ChangeTimelineCreate(ctx, req); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("failed to create timeline: %v", err)), nil
 			}
 
