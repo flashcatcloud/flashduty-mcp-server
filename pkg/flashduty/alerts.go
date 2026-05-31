@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
+	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
@@ -33,13 +33,13 @@ func QueryAlertEvents(getClient GetFlashdutyClientFn, t translations.Translation
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			output, err := client.ListAlertEvents(ctx, &sdk.ListAlertEventsInput{AlertID: alertID})
+			out, _, err := client.New.Alerts.ReadEventList(ctx, &flashduty.AlertEventListRequest{AlertID: alertID})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve alert events: %v", err)), nil
 			}
 
 			return MarshalResult(map[string]any{
-				"alert_events": output.AlertEvents,
+				"alert_events": out.Items,
 			}), nil
 		}
 }

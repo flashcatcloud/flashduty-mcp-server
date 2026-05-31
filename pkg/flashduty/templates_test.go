@@ -5,15 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
-
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
 func TestGetPresetTemplateSchemaDoesNotExposeLocale(t *testing.T) {
 	t.Parallel()
 
-	tool, _ := GetPresetTemplate(func(ctx context.Context) (context.Context, *sdk.Client, error) {
+	tool, _ := GetPresetTemplate(func(ctx context.Context) (context.Context, *Clients, error) {
 		return ctx, nil, nil
 	}, translations.NullTranslationHelper)
 

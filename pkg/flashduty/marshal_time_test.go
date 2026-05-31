@@ -6,17 +6,17 @@ import (
 	"testing"
 	"time"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
+	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// timeFixture is a small struct exercising both SDK timestamp types the way an
-// SDK response object would carry them.
+// timeFixture is a small struct exercising both go-flashduty timestamp types
+// the way an SDK response object would carry them.
 type timeFixture struct {
-	CreatedAt sdk.Timestamp      `json:"created_at"`
-	UpdatedAt sdk.TimestampMilli `json:"updated_at"`
+	CreatedAt flashduty.Timestamp      `json:"created_at"`
+	UpdatedAt flashduty.TimestampMilli `json:"updated_at"`
 }
 
 // resultText pulls the single text payload out of an MCP CallToolResult.
@@ -41,8 +41,8 @@ func TestMarshalResultRendersTimestampsAsRFC3339(t *testing.T) {
 	wantYear := strconv.Itoa(time.Unix(secs, 0).Year())
 
 	fixture := timeFixture{
-		CreatedAt: sdk.Timestamp(secs),
-		UpdatedAt: sdk.TimestampMilli(secs * 1000),
+		CreatedAt: flashduty.Timestamp(secs),
+		UpdatedAt: flashduty.TimestampMilli(secs * 1000),
 	}
 
 	formats := []struct {
@@ -62,7 +62,7 @@ func TestMarshalResultRendersTimestampsAsRFC3339(t *testing.T) {
 		t.Run(f.name, func(t *testing.T) {
 			t.Parallel()
 
-			out := resultText(t, MarshalResultWithFormat(fixture, f.format))
+			out := resultText(t, marshalResultWithFormat(fixture, f.format))
 
 			// RFC3339 shape: contains the date/time 'T' separator and the year.
 			assert.Contains(t, out, "T", "expected RFC3339 'T' separator in %q", out)
@@ -83,7 +83,7 @@ func TestMarshalResultUsesGlobalFormat(t *testing.T) {
 	secs := int64(1748487600)
 	wantYear := strconv.Itoa(time.Unix(secs, 0).Year())
 
-	fixture := timeFixture{CreatedAt: sdk.Timestamp(secs)}
+	fixture := timeFixture{CreatedAt: flashduty.Timestamp(secs)}
 
 	out := resultText(t, MarshalResult(fixture))
 	assert.True(t, strings.Contains(out, wantYear) && strings.Contains(out, "T"),

@@ -3,8 +3,15 @@ package flashduty
 import (
 	"context"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
+	flashduty "github.com/flashcatcloud/go-flashduty"
 )
 
-// GetFlashdutyClientFn is a function that returns a flashduty SDK client
-type GetFlashdutyClientFn func(context.Context) (context.Context, *sdk.Client, error)
+// Clients bundles the Flashduty API clients a tool handler may need.
+//
+// New is the typed go-flashduty client and backs every tool.
+type Clients struct {
+	New *flashduty.Client
+}
+
+// GetFlashdutyClientFn returns the Flashduty clients for the current request.
+type GetFlashdutyClientFn func(context.Context) (context.Context, *Clients, error)

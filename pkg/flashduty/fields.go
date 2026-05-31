@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
+	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
@@ -32,22 +32,39 @@ func QueryFields(getClient GetFlashdutyClientFn, t translations.TranslationHelpe
 			fieldIdsStr, _ := OptionalParam[string](request, "field_ids")
 			fieldName, _ := OptionalParam[string](request, "field_name")
 
-			input := &sdk.ListFieldsInput{
-				FieldName: fieldName,
-			}
-
+			// Direct ID lookup: go-flashduty exposes only single-field /field/info,
+			// so fan out across the requested IDs.
 			if fieldIdsStr != "" {
-				input.FieldIDs = parseCommaSeparatedStrings(fieldIdsStr)
+				fieldIDs := parseCommaSeparatedStrings(fieldIdsStr)
+				if len(fieldIDs) == 0 {
+					return mcp.NewToolResultError("field_ids must contain at least one valid ID when specified"), nil
+				}
+				fields := make([]*flashduty.FieldItem, 0, len(fieldIDs))
+				for _, id := range fieldIDs {
+					item, _, err := client.New.AlertEnrichment.FieldReadInfo(ctx, &flashduty.FieldInfoRequest{FieldID: id})
+					if err != nil {
+						return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve field %s: %v", id, err)), nil
+					}
+					fields = append(fields, item)
+				}
+				return MarshalResult(map[string]any{
+					"fields": fields,
+					"total":  len(fields),
+				}), nil
 			}
 
-			output, err := client.ListFields(ctx, input)
+			// Name search maps to the Query regex filter (matches field_name and
+			// display_name); an exact name matches literally.
+			out, _, err := client.New.AlertEnrichment.FieldReadList(ctx, &flashduty.FieldListRequest{Query: fieldName})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve fields: %v", err)), nil
 			}
 
+			// /field/list returns all matching fields without pagination.
+			total := len(out.Items)
 			return MarshalResult(addTruncationHint(map[string]any{
-				"fields": output.Fields,
-				"total":  output.Total,
-			}, len(output.Fields), output.Total)), nil
+				"fields": out.Items,
+				"total":  total,
+			}, total, total)), nil
 		}
 }

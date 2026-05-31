@@ -98,4 +98,3 @@ When adding new tests:
 2. Use `callTool()` helper for making tool calls
 3. Use `unmarshalToolResponse()` for parsing responses
 4. For tests that create resources, ensure proper cleanup in `t.Cleanup()`
-5. Consider using the native API client (`getAPIClient()`) for verification

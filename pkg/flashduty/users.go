@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
+	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
@@ -34,39 +34,48 @@ func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			name, _ := OptionalParam[string](request, "name")
 			email, _ := OptionalParam[string](request, "email")
 
-			input := &sdk.ListMembersInput{
-				Name:  name,
-				Email: email,
-			}
-
+			// Direct ID lookup uses /member/infos (PersonInfos), which returns
+			// profiles without a separate total.
 			if personIdsStr != "" {
-				personIDs := parseCommaSeparatedInts(personIdsStr)
+				ids := parseCommaSeparatedInts(personIdsStr)
+				personIDs := make([]uint64, 0, len(ids))
+				for _, id := range ids {
+					if id < 0 {
+						continue
+					}
+					personIDs = append(personIDs, uint64(id))
+				}
 				if len(personIDs) == 0 {
 					return mcp.NewToolResultError("person_ids must contain at least one valid ID when specified"), nil
 				}
-				int64IDs := make([]int64, len(personIDs))
-				for i, id := range personIDs {
-					int64IDs[i] = int64(id)
+				out, _, err := client.New.Members.PersonInfos(ctx, &flashduty.PersonInfosRequest{PersonIDs: personIDs})
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve members: %v", err)), nil
 				}
-				input.PersonIDs = int64IDs
+				count := len(out.Items)
+				return MarshalResult(addTruncationHint(map[string]any{
+					"members": out.Items,
+					"total":   count,
+				}, count, count)), nil
 			}
 
-			output, err := client.ListMembers(ctx, input)
+			// Name/email search uses /member/list. go-flashduty exposes a single
+			// free-text Query (no dedicated email field), so fold name/email into
+			// it, preferring name when both are supplied.
+			query := name
+			if query == "" {
+				query = email
+			}
+			out, _, err := client.New.Members.MemberList(ctx, &flashduty.MemberListRequest{Query: query})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve members: %v", err)), nil
 			}
 
-			var members any = output.Members
-			count := len(output.Members)
-			if len(output.PersonInfos) > 0 {
-				members = output.PersonInfos
-				count = len(output.PersonInfos)
-			}
-
+			total := int(out.Total)
 			return MarshalResult(addTruncationHint(map[string]any{
-				"members": members,
-				"total":   output.Total,
-			}, count, output.Total)), nil
+				"members": out.Items,
+				"total":   total,
+			}, len(out.Items), total)), nil
 		}
 }
 
@@ -91,37 +100,38 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 			teamIdsStr, _ := OptionalParam[string](request, "team_ids")
 			name, _ := OptionalParam[string](request, "name")
 
-			input := &sdk.ListTeamsInput{
-				Name: name,
-			}
-
+			// Direct ID lookup uses /team/infos (ReadInfos) and preserves the
+			// historical `items`-only response shape.
 			if teamIdsStr != "" {
-				teamIDs := parseCommaSeparatedInts(teamIdsStr)
+				ids := parseCommaSeparatedInts(teamIdsStr)
+				teamIDs := make([]uint64, 0, len(ids))
+				for _, id := range ids {
+					if id < 0 {
+						continue
+					}
+					teamIDs = append(teamIDs, uint64(id))
+				}
 				if len(teamIDs) == 0 {
 					return mcp.NewToolResultError("team_ids must contain at least one valid ID when specified"), nil
 				}
-				int64IDs := make([]int64, len(teamIDs))
-				for i, id := range teamIDs {
-					int64IDs[i] = int64(id)
+				out, _, err := client.New.Teams.ReadInfos(ctx, &flashduty.TeamInfosRequest{TeamIDs: teamIDs})
+				if err != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve teams: %v", err)), nil
 				}
-				input.TeamIDs = int64IDs
+				return MarshalResult(map[string]any{
+					"items": out.Items,
+				}), nil
 			}
 
-			output, err := client.ListTeams(ctx, input)
+			out, _, err := client.New.Teams.ReadList(ctx, &flashduty.TeamListRequest{Query: name})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve teams: %v", err)), nil
 			}
 
-			// Preserve the historical direct-lookup shape for team_ids queries.
-			if len(input.TeamIDs) > 0 {
-				return MarshalResult(map[string]any{
-					"items": output.Teams,
-				}), nil
-			}
-
+			total := int(out.Total)
 			return MarshalResult(addTruncationHint(map[string]any{
-				"teams": output.Teams,
-				"total": output.Total,
-			}, len(output.Teams), output.Total)), nil
+				"teams": out.Items,
+				"total": total,
+			}, len(out.Items), total)), nil
 		}
 }

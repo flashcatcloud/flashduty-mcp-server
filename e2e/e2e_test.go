@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 	mcpClient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
@@ -55,23 +54,6 @@ func getE2EBaseURL() string {
 		}
 	})
 	return baseURL
-}
-
-// getAPIClient creates a native Flashduty SDK client for verification purposes
-func getAPIClient(t *testing.T) *sdk.Client {
-	appKey := getE2EAppKey(t)
-	baseURL := getE2EBaseURL()
-
-	opts := []sdk.Option{
-		sdk.WithUserAgent("e2e-test-client/1.0.0"),
-	}
-	if baseURL != "" {
-		opts = append(opts, sdk.WithBaseURL(baseURL))
-	}
-	client, err := sdk.NewClient(appKey, opts...)
-	require.NoError(t, err, "expected to create Flashduty SDK client")
-
-	return client
 }
 
 // ensureDockerImageBuilt makes sure the Docker image is built only once across all tests
@@ -420,21 +402,24 @@ func TestQueryIncidents(t *testing.T) {
 
 	t.Log("Querying incidents from the last 7 days...")
 	responseText := callTool(t, mcpClient, "query_incidents", map[string]any{
-		"since":          strconv.FormatInt(startTime, 10),
-		"until":          strconv.FormatInt(now, 10),
-		"limit":          10,
+		"since": strconv.FormatInt(startTime, 10),
+		"until": strconv.FormatInt(now, 10),
+		"limit": 10,
 	})
 
 	var result struct {
 		Incidents []struct {
-			IncidentID  string `json:"incident_id"`
-			Title       string `json:"title"`
-			Severity    string `json:"severity"`
-			Progress    string `json:"progress"`
-			ChannelID   int64  `json:"channel_id"`
-			ChannelName string `json:"channel_name,omitempty"`
-			CreatedAt   int64  `json:"created_at"`
-			AlertsTotal int    `json:"alerts_total,omitempty"`
+			IncidentID string `json:"incident_id"`
+			Title      string `json:"title"`
+			// go-flashduty renames severity -> incident_severity and renders
+			// created_at as an RFC3339 string (Timestamp type) instead of a
+			// Unix integer; alerts_total is now the server-side alert_cnt.
+			IncidentSeverity string `json:"incident_severity"`
+			Progress         string `json:"progress"`
+			ChannelID        int64  `json:"channel_id"`
+			ChannelName      string `json:"channel_name,omitempty"`
+			CreatedAt        string `json:"created_at"`
+			AlertCnt         int    `json:"alert_cnt,omitempty"`
 		} `json:"incidents"`
 		Total int `json:"total"`
 	}
@@ -603,15 +588,15 @@ func TestIncidentLifecycle(t *testing.T) {
 	// Step 2: Query the incident to verify it was created
 	t.Log("Querying the created incident...")
 	queryResponseText := callTool(t, mcpClient, "query_incidents", map[string]any{
-		"incident_ids":   incidentID,
+		"incident_ids": incidentID,
 	})
 
 	var queryResult struct {
 		Incidents []struct {
-			IncidentID string `json:"incident_id"`
-			Title      string `json:"title"`
-			Progress   string `json:"progress"`
-			Severity   string `json:"severity"`
+			IncidentID       string `json:"incident_id"`
+			Title            string `json:"title"`
+			Progress         string `json:"progress"`
+			IncidentSeverity string `json:"incident_severity"`
 		} `json:"incidents"`
 		Total int `json:"total"`
 	}
@@ -640,7 +625,7 @@ func TestIncidentLifecycle(t *testing.T) {
 	// Step 4: Verify the incident is now in Processing state
 	t.Log("Verifying incident is in Processing state...")
 	queryResponseText = callTool(t, mcpClient, "query_incidents", map[string]any{
-		"incident_ids":   incidentID,
+		"incident_ids": incidentID,
 	})
 	unmarshalToolResponse(t, queryResponseText, &queryResult)
 
@@ -665,7 +650,7 @@ func TestIncidentLifecycle(t *testing.T) {
 	// Step 6: Verify the incident is now Closed
 	t.Log("Verifying incident is Closed...")
 	queryResponseText = callTool(t, mcpClient, "query_incidents", map[string]any{
-		"incident_ids":   incidentID,
+		"incident_ids": incidentID,
 	})
 	unmarshalToolResponse(t, queryResponseText, &queryResult)
 
@@ -722,7 +707,8 @@ func TestIncidentQueryByTimeline(t *testing.T) {
 			IncidentID string `json:"incident_id"`
 			Timeline   []struct {
 				Type      string `json:"type"`
-				Timestamp int64  `json:"timestamp"`
+				CreatedAt string `json:"created_at"`
+				CreatorID int64  `json:"creator_id"`
 				Detail    any    `json:"detail,omitempty"`
 			} `json:"timeline"`
 			Total int `json:"total"`
@@ -735,7 +721,8 @@ func TestIncidentQueryByTimeline(t *testing.T) {
 
 	var timeline []struct {
 		Type      string `json:"type"`
-		Timestamp int64  `json:"timestamp"`
+		CreatedAt string `json:"created_at"`
+		CreatorID int64  `json:"creator_id"`
 		Detail    any    `json:"detail,omitempty"`
 	}
 	for _, r := range timelineResult.Results {
@@ -745,6 +732,15 @@ func TestIncidentQueryByTimeline(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, timeline, "expected at least one timeline event")
+
+	// Assert the migrated shape (raw go-flashduty IncidentFeedItem): each event
+	// carries created_at as an RFC3339 string (TimestampMilli), not a raw epoch
+	// int, and a numeric creator_id. This pins the post-migration contract so a
+	// future shape drift cannot pass silently.
+	for _, event := range timeline {
+		require.NotEmpty(t, event.CreatedAt, "timeline event missing created_at")
+		require.Contains(t, event.CreatedAt, "T", "created_at must be RFC3339, got %q", event.CreatedAt)
+	}
 
 	t.Logf("Found %d timeline events", len(timeline))
 
@@ -820,7 +816,7 @@ func TestUpdateIncident(t *testing.T) {
 	// Verify the update
 	t.Log("Verifying the update...")
 	queryResponseText := callTool(t, mcpClient, "query_incidents", map[string]any{
-		"incident_ids":   incidentID,
+		"incident_ids": incidentID,
 	})
 
 	var queryResult struct {

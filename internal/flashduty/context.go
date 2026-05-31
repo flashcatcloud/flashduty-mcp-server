@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/bluele/gcache"
-	sdk "github.com/flashcatcloud/flashduty-sdk"
+	goflashduty "github.com/flashcatcloud/go-flashduty"
 
+	"github.com/flashcatcloud/flashduty-mcp-server/pkg/flashduty"
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/trace"
 )
 
@@ -30,28 +31,28 @@ func ConfigFromContext(ctx context.Context) (FlashdutyConfig, bool) {
 	return cfg, ok
 }
 
-// clientFromContext returns the Flashduty client from the context.
-func clientFromContext(ctx context.Context) (*sdk.Client, bool) {
-	client, ok := ctx.Value(flashdutyClientKey).(*sdk.Client)
-	return client, ok
+// clientsFromContext returns the Flashduty clients from the context.
+func clientsFromContext(ctx context.Context) (*flashduty.Clients, bool) {
+	clients, ok := ctx.Value(flashdutyClientKey).(*flashduty.Clients)
+	return clients, ok
 }
 
-// contextWithClient adds the Flashduty client to the context.
-func contextWithClient(ctx context.Context, client *sdk.Client) context.Context {
-	return context.WithValue(ctx, flashdutyClientKey, client)
+// contextWithClients adds the Flashduty clients to the context.
+func contextWithClients(ctx context.Context, clients *flashduty.Clients) context.Context {
+	return context.WithValue(ctx, flashdutyClientKey, clients)
 }
 
 var clientCache = gcache.New(1000).
 	Expiration(time.Hour).
 	Build()
 
-// getClient is a helper function for tool handlers to get a flashduty client.
-// It will try to get the client from the context first. If not found, it will create a new one
-// based on the config in the context, and cache it in the context for future use in the same request.
-// It falls back to the default config if no config is found in the context.
-func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) (context.Context, *sdk.Client, error) {
-	if client, ok := clientFromContext(ctx); ok {
-		return ctx, client, nil
+// getClient is a helper for tool handlers to obtain the Flashduty clients. It
+// tries the context first; on a miss it builds the typed go-flashduty client,
+// caches it, and stores it on the context for reuse within the same request. It
+// falls back to the default config when the context carries none.
+func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) (context.Context, *flashduty.Clients, error) {
+	if clients, ok := clientsFromContext(ctx); ok {
+		return ctx, clients, nil
 	}
 
 	cfg, ok := ConfigFromContext(ctx)
@@ -65,31 +66,35 @@ func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) 
 
 	// Use APP key and BaseURL as cache key to handle different environments.
 	cacheKey := fmt.Sprintf("%s|%s", cfg.APPKey, cfg.BaseURL)
-	if client, err := clientCache.Get(cacheKey); err == nil {
-		return contextWithClient(ctx, client.(*sdk.Client)), client.(*sdk.Client), nil
+	if cached, err := clientCache.Get(cacheKey); err == nil {
+		clients := cached.(*flashduty.Clients)
+		return contextWithClients(ctx, clients), clients, nil
 	}
 
 	userAgent := fmt.Sprintf("flashduty-mcp-server/%s", version)
 
-	opts := []sdk.Option{
-		sdk.WithUserAgent(userAgent),
-		sdk.WithRequestHook(func(req *http.Request) {
-			if traceCtx := trace.FromContext(req.Context()); traceCtx != nil {
-				traceCtx.SetHTTPHeaders(req.Header)
-			}
-		}),
+	requestHook := func(req *http.Request) {
+		if traceCtx := trace.FromContext(req.Context()); traceCtx != nil {
+			traceCtx.SetHTTPHeaders(req.Header)
+		}
+	}
+
+	newOpts := []goflashduty.Option{
+		goflashduty.WithUserAgent(userAgent),
+		goflashduty.WithRequestHook(requestHook),
 	}
 	if cfg.BaseURL != "" {
-		opts = append(opts, sdk.WithBaseURL(cfg.BaseURL))
+		newOpts = append(newOpts, goflashduty.WithBaseURL(cfg.BaseURL))
 	}
-
-	client, err := sdk.NewClient(cfg.APPKey, opts...)
+	newClient, err := goflashduty.NewClient(cfg.APPKey, newOpts...)
 	if err != nil {
-		return ctx, nil, fmt.Errorf("failed to create Flashduty client: %w", err)
+		return ctx, nil, fmt.Errorf("failed to create go-flashduty client: %w", err)
 	}
 
-	_ = clientCache.Set(cacheKey, client)
-	ctx = contextWithClient(ctx, client)
+	clients := &flashduty.Clients{New: newClient}
 
-	return ctx, client, nil
+	_ = clientCache.Set(cacheKey, clients)
+	ctx = contextWithClients(ctx, clients)
+
+	return ctx, clients, nil
 }
