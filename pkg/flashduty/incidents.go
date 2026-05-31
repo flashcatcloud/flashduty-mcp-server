@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -396,25 +395,17 @@ func UpdateIncident(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			}
 
 			// Custom fields are one /incident/field/reset call each. The backend
-			// accepts an arbitrary JSON value for field_value, but go-flashduty's
-			// ResetIncidentFieldRequest.FieldValue is generated as map[string]any,
-			// which cannot carry scalar values (the common case). Until that type
-			// is fixed upstream, route custom-field writes through the legacy SDK,
-			// which sends the raw value as the API expects. Pass ONLY the custom
-			// fields so the legacy call skips /incident/reset (built-ins already
-			// went through the typed client above) and only hits
-			// /incident/field/reset per field.
-			// TODO: switch to client.New.Incidents.FieldReset once go-flashduty
-			// types field_value as `any`.
-			if len(customFields) > 0 {
-				customNames, err := client.Legacy.UpdateIncident(ctx, &sdk.UpdateIncidentInput{
-					IncidentID:   incidentID,
-					CustomFields: customFields,
-				})
-				if err != nil {
+			// accepts an arbitrary JSON value for field_value, sent as the raw
+			// value the API expects.
+			for name, value := range customFields {
+				if _, err := client.New.Incidents.FieldReset(ctx, &flashduty.ResetIncidentFieldRequest{
+					IncidentID: incidentID,
+					FieldName:  name,
+					FieldValue: value,
+				}); err != nil {
 					return mcp.NewToolResultError(fmt.Sprintf("Unable to update custom fields: %v", err)), nil
 				}
-				updatedFields = append(updatedFields, customNames...)
+				updatedFields = append(updatedFields, name)
 			}
 
 			if len(updatedFields) == 0 {
@@ -535,7 +526,7 @@ func ListSimilarIncidents(getClient GetFlashdutyClientFn, t translations.Transla
 
 			out, _, err := client.New.Incidents.PastList(ctx, &flashduty.ListPastIncidentsRequest{
 				IncidentID: incidentID,
-				Limit:      int64(limit),
+				Limit:      flashduty.Int64(int64(limit)),
 			})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to find similar incidents: %v", err)), nil

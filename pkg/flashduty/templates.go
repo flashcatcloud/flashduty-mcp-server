@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -23,9 +21,8 @@ const presetTemplateID = "000000000000000000000001"
 const getPresetTemplateDescription = `Fetch the preset (default) notification template for a specific channel. Returns the Go template code used as the starting point for customization.`
 
 func sortedChannelEnumValues() []string {
-	channels := append([]string(nil), sdk.ChannelEnumValues()...)
-	slices.Sort(channels)
-	return channels
+	// channelEnumValues already returns a sorted, freshly-allocated slice.
+	return channelEnumValues()
 }
 
 // GetPresetTemplate creates a tool to fetch the preset template for a channel.
@@ -52,7 +49,7 @@ func GetPresetTemplate(getClient GetFlashdutyClientFn, t translations.Translatio
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			fieldName, ok := sdk.TemplateChannels[channel]
+			fieldName, ok := templateChannels[channel]
 			if !ok {
 				return mcp.NewToolResultError(fmt.Sprintf("unknown channel: %s", channel)), nil
 			}
@@ -138,7 +135,7 @@ func ValidateTemplate(getClient GetFlashdutyClientFn, t translations.Translation
 
 			incidentID, _ := OptionalParam[string](request, "incident_id")
 
-			fieldName, ok := sdk.TemplateChannels[channel]
+			fieldName, ok := templateChannels[channel]
 			if !ok {
 				return mcp.NewToolResultError(fmt.Sprintf("unknown channel: %s", channel)), nil
 			}
@@ -160,7 +157,7 @@ func ValidateTemplate(getClient GetFlashdutyClientFn, t translations.Translation
 			// output shape stays identical post-migration.
 			renderedPreview := out.Content
 			renderedSize := len(renderedPreview)
-			sizeLimit := sdk.ChannelSizeLimits[channel]
+			sizeLimit := channelSizeLimits[channel]
 
 			errs := []string{}
 			warnings := []string{}
@@ -209,7 +206,7 @@ func ListTemplateVariables(_ GetFlashdutyClientFn, t translations.TranslationHel
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
 		), func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			variables := sdk.TemplateVariables()
+			variables := templateVariables()
 			return MarshalResult(map[string]any{
 				"variables": variables,
 				"total":     len(variables),
@@ -231,8 +228,8 @@ func ListTemplateFunctions(_ GetFlashdutyClientFn, t translations.TranslationHel
 			}),
 		), func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return MarshalResult(map[string]any{
-				"custom_functions": sdk.TemplateCustomFunctions(),
-				"sprig_functions":  sdk.TemplateSprigFunctions(),
+				"custom_functions": templateCustomFunctions(),
+				"sprig_functions":  templateSprigFunctions(),
 			}), nil
 		}
 }

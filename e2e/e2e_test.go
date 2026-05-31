@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 	mcpClient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/require"
@@ -55,23 +54,6 @@ func getE2EBaseURL() string {
 		}
 	})
 	return baseURL
-}
-
-// getAPIClient creates a native Flashduty SDK client for verification purposes
-func getAPIClient(t *testing.T) *sdk.Client {
-	appKey := getE2EAppKey(t)
-	baseURL := getE2EBaseURL()
-
-	opts := []sdk.Option{
-		sdk.WithUserAgent("e2e-test-client/1.0.0"),
-	}
-	if baseURL != "" {
-		opts = append(opts, sdk.WithBaseURL(baseURL))
-	}
-	client, err := sdk.NewClient(appKey, opts...)
-	require.NoError(t, err, "expected to create Flashduty SDK client")
-
-	return client
 }
 
 // ensureDockerImageBuilt makes sure the Docker image is built only once across all tests

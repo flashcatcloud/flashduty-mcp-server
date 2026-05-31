@@ -4,22 +4,13 @@ import (
 	"context"
 
 	flashduty "github.com/flashcatcloud/go-flashduty"
-
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 )
 
-// Clients bundles the two Flashduty API clients a tool handler may need.
+// Clients bundles the Flashduty API clients a tool handler may need.
 //
-// New is the typed go-flashduty client and backs every migrated tool. Legacy
-// is the hand-written flashduty-sdk client, kept only for the handful of tools
-// whose endpoints go-flashduty does not cover yet (query_changes,
-// validate_template, query_status_pages).
-//
-// TODO: drop Legacy and the flashduty-sdk dependency once go-flashduty covers
-// /change/list, /template/preview, and /status-page/list.
+// New is the typed go-flashduty client and backs every tool.
 type Clients struct {
-	New    *flashduty.Client
-	Legacy *sdk.Client
+	New *flashduty.Client
 }
 
 // GetFlashdutyClientFn returns the Flashduty clients for the current request.

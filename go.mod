@@ -4,8 +4,7 @@ go 1.25.5
 
 require (
 	github.com/bluele/gcache v0.0.2
-	github.com/flashcatcloud/flashduty-sdk v0.8.1-0.20260510070250-0340ac6a5a33
-	github.com/flashcatcloud/go-flashduty v0.4.0
+	github.com/flashcatcloud/go-flashduty v0.5.1
 	github.com/google/go-github/v72 v72.0.0
 	github.com/josephburnett/jd v1.9.2
 	github.com/mark3labs/mcp-go v0.52.0
@@ -27,7 +26,6 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yudai/golcs v0.0.0-20170316035057-ecda9a501e82 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
-	golang.org/x/sync v0.19.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

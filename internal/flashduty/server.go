@@ -78,7 +78,6 @@ func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 			message.Params.ClientInfo.Version,
 		)
 		clients.New.UserAgent = userAgent
-		clients.Legacy.SetUserAgent(userAgent)
 	}
 
 	if len(cfg.EnabledToolsets) == 0 {

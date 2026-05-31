@@ -65,17 +65,6 @@ func MarshalResult(v any) *mcp.CallToolResult {
 	return marshalResultWithFormat(v, outputFormat)
 }
 
-// MarshalLegacyResult is MarshalResult for the few tools still backed by the
-// hand-written flashduty-sdk (query_changes, validate_template,
-// query_status_pages). Those return bare Unix-integer time fields, so this
-// variant runs humanizeTimestamps to render them as RFC3339 before encoding.
-//
-// TODO: delete once go-flashduty covers /change/list, /template/preview, and
-// /status-page/list and the pending tools migrate to the typed Timestamp.
-func MarshalLegacyResult(v any) *mcp.CallToolResult {
-	return marshalResultWithFormat(humanizeTimestamps(v), outputFormat)
-}
-
 func marshalResultWithFormat(v any, format OutputFormat) *mcp.CallToolResult {
 	data, err := marshal(v, format)
 	if err != nil {

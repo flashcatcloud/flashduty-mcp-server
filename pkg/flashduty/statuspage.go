@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
 	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -99,24 +98,23 @@ func ListStatusChanges(getClient GetFlashdutyClientFn, t translations.Translatio
 				return mcp.NewToolResultError("type must be 'incident' or 'maintenance'"), nil
 			}
 
-			// This tool lists *active* changes via /status-page/change/active/list,
-			// which go-flashduty does not expose (its ChangeList hits the general
-			// /status-page/change/list, which requires a single mandatory status
-			// and a time window — different semantics). Keep the legacy SDK until
-			// go-flashduty adds the active-list endpoint.
-			// TODO: 待 go-flashduty 覆盖 /status-page/change/active/list 后切换并删除老 SDK 依赖。
-			output, err := client.Legacy.ListStatusChanges(ctx, &sdk.ListStatusChangesInput{
-				PageID:     int64(pageID),
-				ChangeType: changeType,
+			// Lists *active* (in-progress, non-terminal) changes via
+			// /status-page/change/active/list. The endpoint returns every active
+			// event of the requested type in one shot — no pagination and no
+			// list-level total — so the count is simply len(resp.Items).
+			resp, _, err := client.New.StatusPages.ChangeActiveList(ctx, &flashduty.StatusPagesChangeActiveListRequest{
+				PageID: int64(pageID),
+				Type:   changeType,
 			})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("failed to list status changes: %v", err)), nil
 			}
 
-			return MarshalLegacyResult(addTruncationHint(map[string]any{
-				"changes": output.Changes,
-				"total":   output.Total,
-			}, len(output.Changes), output.Total)), nil
+			total := len(resp.Items)
+			return MarshalResult(addTruncationHint(map[string]any{
+				"changes": resp.Items,
+				"total":   total,
+			}, total, total)), nil
 		}
 }
 
