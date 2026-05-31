@@ -138,20 +138,61 @@ func ValidateTemplate(getClient GetFlashdutyClientFn, t translations.Translation
 
 			incidentID, _ := OptionalParam[string](request, "incident_id")
 
-			input := &sdk.ValidateTemplateInput{
-				Channel:      channel,
-				TemplateCode: templateCode,
-				IncidentID:   incidentID,
+			fieldName, ok := sdk.TemplateChannels[channel]
+			if !ok {
+				return mcp.NewToolResultError(fmt.Sprintf("unknown channel: %s", channel)), nil
 			}
 
-			// TODO: 待 go-flashduty 覆盖 /change/list,/template/preview,/status-page/list
-			// 后切换并删除老 SDK 依赖。/template/preview is not yet in go-flashduty.
-			output, err := client.Legacy.ValidateTemplate(ctx, input)
+			// /template/preview renders the template; the wire `type` is the
+			// channel identifier itself (e.g. "dingtalk").
+			out, _, err := client.New.NotificationTemplates.ReadPreview(ctx, &flashduty.PreviewTemplateRequest{
+				Content:    templateCode,
+				IncidentID: incidentID,
+				Type:       channel,
+			})
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to validate template: %v", err)), nil
 			}
 
-			return MarshalLegacyResult(output), nil
+			// The raw endpoint only renders + reports parse errors. Size-limit
+			// validation (errors/warnings, rendered_size, size_limit) is tool
+			// logic the legacy SDK used to fold in; reproduce it here so the
+			// output shape stays identical post-migration.
+			renderedPreview := out.Content
+			renderedSize := len(renderedPreview)
+			sizeLimit := sdk.ChannelSizeLimits[channel]
+
+			errs := []string{}
+			warnings := []string{}
+			if !out.Success {
+				errs = append(errs, out.Message)
+			}
+			if sizeLimit > 0 {
+				if renderedSize > sizeLimit {
+					sizeWarning := fmt.Sprintf("Rendered output is %d bytes, exceeding the %d byte limit for %s.", renderedSize, sizeLimit, channel)
+					switch channel {
+					case "telegram":
+						sizeWarning += " CRITICAL: Telegram will silently drop this message."
+					case "teams_app":
+						sizeWarning += " Teams will return an error for this message."
+					}
+					errs = append(errs, sizeWarning)
+				} else if renderedSize > int(float64(sizeLimit)*0.8) {
+					warnings = append(warnings, fmt.Sprintf("Rendered output is %d/%d bytes (%.0f%% of limit).", renderedSize, sizeLimit, float64(renderedSize)/float64(sizeLimit)*100))
+				}
+			}
+
+			return MarshalResult(map[string]any{
+				"channel":          channel,
+				"field_name":       fieldName,
+				"template_code":    templateCode,
+				"success":          out.Success && len(errs) == 0,
+				"rendered_preview": renderedPreview,
+				"rendered_size":    renderedSize,
+				"size_limit":       sizeLimit,
+				"errors":           errs,
+				"warnings":         warnings,
+			}), nil
 		}
 }
 

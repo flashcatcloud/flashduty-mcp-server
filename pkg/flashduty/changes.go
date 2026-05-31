@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	sdk "github.com/flashcatcloud/flashduty-sdk"
+	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
@@ -65,38 +65,49 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			input := &sdk.ListChangesInput{
+			req := &flashduty.ListChangeRequest{
 				StartTime: startTime,
 				EndTime:   endTime,
-				Type:      changeType,
-				Limit:     limit,
+				Query:     changeType,
 			}
-
-			if changeIdsStr != "" {
-				input.ChangeIDs = parseCommaSeparatedStrings(changeIdsStr)
-			}
+			req.Limit = limit
 
 			if channelIdsStr != "" {
 				channelIDs := parseCommaSeparatedInts(channelIdsStr)
 				if len(channelIDs) == 0 {
 					return mcp.NewToolResultError("channel_ids must contain at least one valid ID when specified"), nil
 				}
-				input.ChannelIDs = make([]int64, len(channelIDs))
+				req.ChannelIDs = make([]int64, len(channelIDs))
 				for i, id := range channelIDs {
-					input.ChannelIDs[i] = int64(id)
+					req.ChannelIDs[i] = int64(id)
 				}
 			}
 
-			// TODO: 待 go-flashduty 覆盖 /change/list,/template/preview,/status-page/list
-			// 后切换并删除老 SDK 依赖。/change/list is not yet in go-flashduty.
-			output, err := client.Legacy.ListChanges(ctx, input)
+			resp, _, err := client.New.Changes.List(ctx, req)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve changes: %v", err)), nil
 			}
 
-			return MarshalLegacyResult(addTruncationHint(map[string]any{
-				"changes": output.Changes,
-				"total":   output.Total,
-			}, len(output.Changes), output.Total)), nil
+			changes := resp.Items
+			// /change/list has no change_ids filter; honor the direct-lookup
+			// param by filtering the returned page client-side.
+			if changeIdsStr != "" {
+				wanted := make(map[string]struct{})
+				for _, id := range parseCommaSeparatedStrings(changeIdsStr) {
+					wanted[id] = struct{}{}
+				}
+				filtered := changes[:0]
+				for _, ch := range changes {
+					if _, ok := wanted[ch.ChangeID]; ok {
+						filtered = append(filtered, ch)
+					}
+				}
+				changes = filtered
+			}
+
+			return MarshalResult(addTruncationHint(map[string]any{
+				"changes": changes,
+				"total":   resp.Total,
+			}, len(changes), int(resp.Total))), nil
 		}
 }

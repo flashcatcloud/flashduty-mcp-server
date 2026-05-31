@@ -35,21 +35,32 @@ func QueryStatusPages(getClient GetFlashdutyClientFn, t translations.Translation
 
 			pageIdsStr, _ := OptionalParam[string](request, "page_ids")
 
-			var pageIDs []int64
+			wanted := make(map[int64]struct{})
 			if pageIdsStr != "" {
 				for _, id := range parseCommaSeparatedInts(pageIdsStr) {
-					pageIDs = append(pageIDs, int64(id))
+					wanted[int64(id)] = struct{}{}
 				}
 			}
 
-			// TODO: 待 go-flashduty 覆盖 /change/list,/template/preview,/status-page/list
-			// 后切换并删除老 SDK 依赖。/status-page/list is not yet in go-flashduty.
-			pages, err := client.Legacy.ListStatusPages(ctx, pageIDs)
+			resp, _, err := client.New.StatusPages.ReadPageList(ctx)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("failed to list status pages: %v", err)), nil
 			}
 
-			return MarshalLegacyResult(map[string]any{
+			// ReadPageList returns every page; honor the optional page_ids
+			// filter client-side since the endpoint takes no filter param.
+			pages := resp.Items
+			if len(wanted) > 0 {
+				filtered := pages[:0]
+				for _, p := range pages {
+					if _, ok := wanted[p.PageID]; ok {
+						filtered = append(filtered, p)
+					}
+				}
+				pages = filtered
+			}
+
+			return MarshalResult(map[string]any{
 				"pages": pages,
 				"total": len(pages),
 			}), nil
