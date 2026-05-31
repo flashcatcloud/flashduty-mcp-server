@@ -126,7 +126,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 		}
 }
 
-const queryIncidentTimelineDescription = `Query timeline events for incidents. Returns events like created, assigned, acknowledged, resolved, notifications.`
+const queryIncidentTimelineDescription = `Query timeline events for incidents. Returns events like created, assigned, acknowledged, resolved, notifications. Each event includes created_at (RFC3339) and creator_id (the actor's numeric ID, 0 = system); resolve creator_id to a display name with query_members when you need the actor's name.`
 
 // QueryIncidentTimeline creates a tool to query incident timeline
 func QueryIncidentTimeline(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {

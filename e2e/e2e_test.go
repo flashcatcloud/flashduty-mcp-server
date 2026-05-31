@@ -707,7 +707,8 @@ func TestIncidentQueryByTimeline(t *testing.T) {
 			IncidentID string `json:"incident_id"`
 			Timeline   []struct {
 				Type      string `json:"type"`
-				Timestamp int64  `json:"timestamp"`
+				CreatedAt string `json:"created_at"`
+				CreatorID int64  `json:"creator_id"`
 				Detail    any    `json:"detail,omitempty"`
 			} `json:"timeline"`
 			Total int `json:"total"`
@@ -720,7 +721,8 @@ func TestIncidentQueryByTimeline(t *testing.T) {
 
 	var timeline []struct {
 		Type      string `json:"type"`
-		Timestamp int64  `json:"timestamp"`
+		CreatedAt string `json:"created_at"`
+		CreatorID int64  `json:"creator_id"`
 		Detail    any    `json:"detail,omitempty"`
 	}
 	for _, r := range timelineResult.Results {
@@ -730,6 +732,15 @@ func TestIncidentQueryByTimeline(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, timeline, "expected at least one timeline event")
+
+	// Assert the migrated shape (raw go-flashduty IncidentFeedItem): each event
+	// carries created_at as an RFC3339 string (TimestampMilli), not a raw epoch
+	// int, and a numeric creator_id. This pins the post-migration contract so a
+	// future shape drift cannot pass silently.
+	for _, event := range timeline {
+		require.NotEmpty(t, event.CreatedAt, "timeline event missing created_at")
+		require.Contains(t, event.CreatedAt, "T", "created_at must be RFC3339, got %q", event.CreatedAt)
+	}
 
 	t.Logf("Found %d timeline events", len(timeline))
 
