@@ -41,6 +41,12 @@ func TestParse(t *testing.T) {
 		{name: "future +7d", input: "+7d", wantApprox: now + int64(7*24*time.Hour/time.Second), approxMatch: true, tolerance: 2},
 		{name: "past 7d", input: "7d", wantApprox: now - int64(7*24*time.Hour/time.Second), approxMatch: true, tolerance: 2},
 		{name: "future garbage", input: "+garbage", wantErr: true},
+		// RFC3339 round-trip — the format the SDK emits and the agent feeds
+		// straight back as since/until (the bug this fixes).
+		{name: "rfc3339 offset", input: "2026-05-29T00:00:00+08:00", wantExact: time.Date(2026, 5, 29, 0, 0, 0, 0, time.FixedZone("", 8*3600)).Unix(), exactMatch: true},
+		{name: "rfc3339 utc Z", input: "2026-05-29T00:00:00Z", wantExact: time.Date(2026, 5, 29, 0, 0, 0, 0, time.UTC).Unix(), exactMatch: true},
+		{name: "rfc3339nano fractional", input: "2026-05-29T00:00:00.5+08:00", wantExact: time.Date(2026, 5, 29, 0, 0, 0, 0, time.FixedZone("", 8*3600)).Unix(), exactMatch: true},
+		{name: "datetime T no tz local", input: "2026-05-29T14:00:00", wantExact: time.Date(2026, 5, 29, 14, 0, 0, 0, time.Local).Unix(), exactMatch: true},
 	}
 
 	for _, tc := range tests {

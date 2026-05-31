@@ -15,7 +15,8 @@ import (
 //     Interpreted as "now plus duration"
 //   - Day shorthand: "7d", "30d" — converted to hours automatically
 //   - Date: "2026-04-01" (parsed as local midnight)
-//   - Datetime: "2026-04-01 10:00:00" (parsed as local time)
+//   - Datetime: "2026-04-01 10:00:00" or "2026-04-01T10:00:00" (parsed as local time)
+//   - RFC3339 with timezone: "2026-04-01T10:00:00+08:00" / "...Z" (the format the SDK emits)
 //   - Unix timestamp: "1712000000" (passed through)
 func Parse(s string) (int64, error) {
 	s = strings.TrimSpace(s)
@@ -41,19 +42,33 @@ func Parse(s string) (int64, error) {
 		return time.Now().Add(-d).Unix(), nil
 	}
 
+	// Try RFC3339 / ISO8601 with an explicit timezone first. This is the
+	// format the flashduty SDK renders timestamps in (e.g.
+	// "2026-05-29T00:00:00+08:00"), so the agent naturally round-trips those
+	// values straight back as since/until. time.Parse honors the embedded
+	// offset ("Z" or "+08:00").
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.Unix(), nil
+		}
+	}
+
 	if t, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
 		return t.Unix(), nil
 	}
 
-	if t, err := time.ParseInLocation("2006-01-02 15:04:05", s, time.Local); err == nil {
-		return t.Unix(), nil
+	// Datetime without timezone, space- or "T"-separated → local time.
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+			return t.Unix(), nil
+		}
 	}
 
 	if ts, err := strconv.ParseInt(s, 10, 64); err == nil && ts > 1000000000 {
 		return ts, nil
 	}
 
-	return 0, fmt.Errorf("unable to parse time %q: expected duration (24h), date (2006-01-02), datetime (2006-01-02 15:04:05), or unix timestamp", s)
+	return 0, fmt.Errorf("unable to parse time %q: expected duration (24h), RFC3339 (2006-01-02T15:04:05Z07:00), date (2006-01-02), datetime (2006-01-02 15:04:05), or unix timestamp", s)
 }
 
 // ParseAny accepts the same string formats as Parse, plus raw numeric unix
