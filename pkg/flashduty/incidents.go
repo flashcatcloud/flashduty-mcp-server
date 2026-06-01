@@ -16,7 +16,7 @@ import (
 
 const defaultQueryLimit = 20
 
-const queryIncidentsDescription = `Query incidents by IDs, time range, status, severity, channel, or free-text query. Returns the incident list with an alerts_total count per incident; for the actual alert objects of one or more incidents, call query_incident_alerts(incident_ids=...).`
+const queryIncidentsDescription = `Query incidents by IDs, short ids (nums), time range, status, severity, channel, or free-text query. Returns the incident list with an alerts_total count per incident; for the actual alert objects of one or more incidents, call query_incident_alerts(incident_ids=...).`
 
 // QueryIncidents creates a tool to query incidents with enriched data
 func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -33,6 +33,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			WithSince(),
 			WithUntil(),
 			mcp.WithString("query", mcp.Description("Free-text search across title, labels, and content (Doris full-text). A 24-char hex string is resolved as an incident ID; a 6-char string is resolved as an incident num. Prefer this over picking exact filter values when the user gives a fuzzy keyword."), mcp.MaxLength(200)),
+			mcp.WithString("nums", mcp.Description("Comma-separated short incident ids (num — the 6-char id shown in the UI, e.g. 311510). Matched within the since/until window; the backend caps the list span at ~30 days, so incidents older than that must be looked up by their full incident_id.")),
 			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
@@ -46,6 +47,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			severity, _ := OptionalParam[string](request, "severity")
 			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
 			query, _ := OptionalParam[string](request, "query")
+			nums, _ := OptionalParam[string](request, "nums")
 			limit, _ := OptionalInt(request, "limit")
 
 			startTime, err := timeutil.ParseAny(args["since"])
@@ -107,6 +109,10 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				for i, id := range channelIDs {
 					req.ChannelIDs[i] = int64(id)
 				}
+			}
+
+			if nums != "" {
+				req.Nums = parseCommaSeparatedStrings(nums)
 			}
 
 			if err := validateTimeWindow(startTime, endTime); err != nil {
