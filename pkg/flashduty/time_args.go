@@ -14,6 +14,11 @@ import (
 // so the LLM gets a guided error before the round-trip.
 const MaxTimeWindow = 31 * 24 * time.Hour
 
+// DefaultIncidentWindow is the lookback query_incidents applies when the caller
+// omits both since and until ("current open incidents" with no explicit range).
+// Kept under MaxTimeWindow so the defaulted span never trips the backend cap.
+const DefaultIncidentWindow = 30 * 24 * time.Hour
+
 // SinceDescription / UntilDescription are reused across query_incidents
 // and query_changes. The wording is tuned for LLM callers that
 // otherwise pick absolute dates from stale training data and silently query
@@ -41,6 +46,23 @@ func WithSince(opts ...mcp.PropertyOption) mcp.ToolOption {
 
 func WithUntil(opts ...mcp.PropertyOption) mcp.ToolOption {
 	return mcp.WithString("until", append([]mcp.PropertyOption{mcp.Description(UntilDescription)}, opts...)...)
+}
+
+// argProvided reports whether an MCP argument was actually supplied with a
+// usable value. It mirrors timeutil.ParseAny's "not provided" semantics: a
+// missing key (nil) or an empty string both count as omitted. Callers use this
+// to distinguish "the user left this out" from a parsed zero — important for
+// since/until, where parseUntilArg collapses a missing `until` into "now" and
+// thereby loses the omission signal.
+func argProvided(v any) bool {
+	switch x := v.(type) {
+	case nil:
+		return false
+	case string:
+		return x != ""
+	default:
+		return true
+	}
 }
 
 // parseUntilArg parses an "until" argument, defaulting to "now" when missing

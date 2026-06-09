@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	flashduty "github.com/flashcatcloud/go-flashduty"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -18,6 +19,28 @@ const defaultQueryLimit = 20
 
 const queryIncidentsDescription = `Query incidents by IDs, short ids (nums), time range, status, severity, channel, or free-text query. Returns the incident list with an alerts_total count per incident; for the actual alert objects of one or more incidents, call query_incident_alerts(incident_ids=...).`
 
+// incidentSinceDescription / incidentUntilDescription override the shared
+// SinceDescription / UntilDescription for query_incidents, where the window is
+// optional: omit both bounds to query "current" open incidents and the tool
+// defaults to the last 30 days. (query_changes keeps the shared wording.)
+const (
+	incidentSinceDescription = "OPTIONAL lower bound of the query window. " +
+		"Omit BOTH since and until to default to the last 30 days — the natural " +
+		"choice for \"current\" / open incidents. " +
+		"PREFER relative durations like \"24h\", \"7d\", \"30m\" — they are anchored " +
+		"to server time and immune to your training-data cutoff. " +
+		"Use absolute dates (\"2026-04-01\" or \"2026-04-01 10:00:00\") ONLY when " +
+		"the user explicitly asked for a specific calendar date; double-check the " +
+		"year, since picking the wrong year returns silently incorrect data. " +
+		"Also accepts unix seconds (\"1712000000\") and \"now\". " +
+		"Max window (until - since): 31 days. Data older than ~90 days may have been purged."
+
+	incidentUntilDescription = "OPTIONAL upper bound of the query window. Same formats as `since`, plus " +
+		"future durations like \"+24h\", \"+7d\". Defaults to \"now\" when omitted. " +
+		"Omit BOTH since and until to default to the last 30 days. " +
+		"Must be greater than `since` and within 31 days of it."
+)
+
 // QueryIncidents creates a tool to query incidents with enriched data
 func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
 	return mcp.NewTool("query_incidents",
@@ -30,8 +53,8 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			mcp.WithString("progress", mcp.Description("Filter by status. Valid values: Triggered, Processing, Closed. Comma-separated for multiple."), mcp.Enum("Triggered", "Processing", "Closed", "Triggered,Processing", "Processing,Closed", "Triggered,Closed", "Triggered,Processing,Closed")),
 			mcp.WithString("severity", mcp.Description("Filter by severity level. Valid values: Info, Warning, Critical."), mcp.Enum("Info", "Warning", "Critical")),
 			mcp.WithString("channel_ids", mcp.Description("Comma-separated collaboration space IDs to filter by. Backend expects an array — singular channel_id is silently ignored.")),
-			WithSince(),
-			WithUntil(),
+			WithSince(mcp.Description(incidentSinceDescription)),
+			WithUntil(mcp.Description(incidentUntilDescription)),
 			mcp.WithString("query", mcp.Description("Free-text search across title, labels, and content (Doris full-text). A 24-char hex string is resolved as an incident ID; a 6-char string is resolved as an incident num. Prefer this over picking exact filter values when the user gives a fuzzy keyword."), mcp.MaxLength(200)),
 			mcp.WithString("nums", mcp.Description("Comma-separated short incident ids (num — the 6-char id shown in the UI, e.g. 311510). Matched within the since/until window; the backend caps the list span at ~30 days, so incidents older than that must be looked up by their full incident_id.")),
 			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
@@ -57,6 +80,23 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			endTime, err := parseUntilArg(args["until"])
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("invalid until: %v", err)), nil
+			}
+
+			// "current open incidents" with no window is the common ask, so when
+			// BOTH bounds are omitted default to the last 30 days (under the
+			// 31-day backend cap) instead of rejecting the call. A bare `until`
+			// is fine (it documents a "now" default, already applied by
+			// parseUntilArg); a bare `since` is still a real mistake worth an
+			// error. parseUntilArg has collapsed a missing `until` into "now", so
+			// detect omission from the raw args, not the parsed values.
+			sinceProvided := argProvided(args["since"])
+			untilProvided := argProvided(args["until"])
+			if !sinceProvided {
+				if untilProvided {
+					return mcp.NewToolResultError("`since` is required when `until` is set; omit both to default to the last 30 days, or pass a relative duration like \"30d\""), nil
+				}
+				endTime = time.Now().Unix()
+				startTime = endTime - int64(DefaultIncidentWindow/time.Second)
 			}
 
 			if limit <= 0 {
