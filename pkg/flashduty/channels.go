@@ -23,6 +23,8 @@ func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHel
 			}),
 			mcp.WithString("channel_ids", mcp.Description("Comma-separated channel IDs for direct lookup. Max 1000 IDs.")),
 			mcp.WithString("name", mcp.Description("Search by channel name (case-insensitive substring match).")),
+			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithNumber("page", mcp.Description(PageDescription), mcp.DefaultNumber(1), mcp.Min(1)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -31,11 +33,19 @@ func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHel
 
 			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
 			name, _ := OptionalParam[string](request, "name")
+			limit, page := optionalPaging(request, defaultQueryLimit)
 
 			// Map name to the free-text Query (substring match against
 			// name/description) rather than ChannelName, which is exact-match.
+			// channel_ids is a filter on the same paginated /channel/list
+			// endpoint (not a dedicated by-ID lookup), so limit/page apply to it
+			// too — a >limit channel_ids lookup pages like any other listing.
 			req := &flashduty.ListChannelsRequest{
 				Query: name,
+			}
+			req.Limit = limit
+			if page > 1 {
+				req.Page = page
 			}
 
 			// Parse channel IDs if provided
@@ -58,10 +68,10 @@ func QueryChannels(getClient GetFlashdutyClientFn, t translations.TranslationHel
 			}
 
 			total := int(out.Total)
-			return MarshalResult(addTruncationHint(map[string]any{
+			return MarshalResult(addPageHint(map[string]any{
 				"channels": out.Items,
 				"total":    total,
-			}, len(out.Items), total)), nil
+			}, len(out.Items), total, page, limit)), nil
 		}
 }
 
