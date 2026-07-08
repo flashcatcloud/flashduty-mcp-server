@@ -24,6 +24,8 @@ func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			mcp.WithString("person_ids", mcp.Description("Comma-separated person IDs for direct lookup.")),
 			mcp.WithString("name", mcp.Description("Search by member name (fuzzy match).")),
 			mcp.WithString("email", mcp.Description("Search by email address.")),
+			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithNumber("page", mcp.Description(PageDescription), mcp.DefaultNumber(1), mcp.Min(1)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -33,6 +35,7 @@ func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			personIdsStr, _ := OptionalParam[string](request, "person_ids")
 			name, _ := OptionalParam[string](request, "name")
 			email, _ := OptionalParam[string](request, "email")
+			limit, page := optionalPaging(request, defaultQueryLimit)
 
 			// Direct ID lookup uses /member/infos (PersonInfos), which returns
 			// profiles without a separate total.
@@ -66,16 +69,21 @@ func QueryMembers(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			if query == "" {
 				query = email
 			}
-			out, _, err := client.New.Members.MemberList(ctx, &flashduty.MemberListRequest{Query: query})
+			memberReq := &flashduty.MemberListRequest{Query: query}
+			memberReq.Limit = limit
+			if page > 1 {
+				memberReq.Page = page
+			}
+			out, _, err := client.New.Members.MemberList(ctx, memberReq)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve members: %v", err)), nil
 			}
 
 			total := int(out.Total)
-			return MarshalResult(addTruncationHint(map[string]any{
+			return MarshalResult(addPageHint(map[string]any{
 				"members": out.Items,
 				"total":   total,
-			}, len(out.Items), total)), nil
+			}, len(out.Items), total, page, limit)), nil
 		}
 }
 
@@ -91,6 +99,8 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 			}),
 			mcp.WithString("team_ids", mcp.Description("Comma-separated team IDs for direct lookup.")),
 			mcp.WithString("name", mcp.Description("Search by team name.")),
+			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithNumber("page", mcp.Description(PageDescription), mcp.DefaultNumber(1), mcp.Min(1)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -99,6 +109,7 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 
 			teamIdsStr, _ := OptionalParam[string](request, "team_ids")
 			name, _ := OptionalParam[string](request, "name")
+			limit, page := optionalPaging(request, defaultQueryLimit)
 
 			// Direct ID lookup uses /team/infos (ReadInfos) and preserves the
 			// historical `items`-only response shape.
@@ -123,15 +134,20 @@ func QueryTeams(getClient GetFlashdutyClientFn, t translations.TranslationHelper
 				}), nil
 			}
 
-			out, _, err := client.New.Teams.ReadList(ctx, &flashduty.TeamListRequest{Query: name})
+			teamReq := &flashduty.TeamListRequest{Query: name}
+			teamReq.Limit = limit
+			if page > 1 {
+				teamReq.Page = page
+			}
+			out, _, err := client.New.Teams.ReadList(ctx, teamReq)
 			if err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve teams: %v", err)), nil
 			}
 
 			total := int(out.Total)
-			return MarshalResult(addTruncationHint(map[string]any{
+			return MarshalResult(addPageHint(map[string]any{
 				"teams": out.Items,
 				"total": total,
-			}, len(out.Items), total)), nil
+			}, len(out.Items), total, page, limit)), nil
 		}
 }

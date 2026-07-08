@@ -29,6 +29,7 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			WithUntil(),
 			mcp.WithString("type", mcp.Description("Filter by change type.")),
 			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithNumber("page", mcp.Description(PageDescription), mcp.DefaultNumber(1), mcp.Min(1)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -39,11 +40,7 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			changeIdsStr, _ := OptionalParam[string](request, "change_ids")
 			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
 			changeType, _ := OptionalParam[string](request, "type")
-			limit, _ := OptionalInt(request, "limit")
-
-			if limit <= 0 {
-				limit = 20
-			}
+			limit, page := optionalPaging(request, defaultQueryLimit)
 
 			startTime, err := timeutil.ParseAny(args["since"])
 			if err != nil {
@@ -71,6 +68,9 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 				Query:     changeType,
 			}
 			req.Limit = limit
+			if page > 1 {
+				req.Page = page
+			}
 
 			if channelIdsStr != "" {
 				channelIDs := parseCommaSeparatedInts(channelIdsStr)
@@ -89,8 +89,13 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			}
 
 			changes := resp.Items
-			// /change/list has no change_ids filter; honor the direct-lookup
-			// param by filtering the returned page client-side.
+			// /change/list has no server-side change_ids filter; honor the
+			// direct-lookup param by filtering the fetched page client-side.
+			// This is a best-effort single-page lookup — paging doesn't map onto
+			// it, so report the found count as the total and skip the page hint.
+			// (Feeding the filtered count with the window's unfiltered total into
+			// addPageHint would mislead: "Showing 0 of 5000, request page:2",
+			// inviting the agent to page the whole window chasing a few IDs.)
 			if changeIdsStr != "" {
 				wanted := make(map[string]struct{})
 				for _, id := range parseCommaSeparatedStrings(changeIdsStr) {
@@ -102,12 +107,15 @@ func QueryChanges(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 						filtered = append(filtered, ch)
 					}
 				}
-				changes = filtered
+				return MarshalResult(map[string]any{
+					"changes": filtered,
+					"total":   len(filtered),
+				}), nil
 			}
 
-			return MarshalResult(addTruncationHint(map[string]any{
+			return MarshalResult(addPageHint(map[string]any{
 				"changes": changes,
 				"total":   resp.Total,
-			}, len(changes), int(resp.Total))), nil
+			}, len(changes), int(resp.Total), page, limit)), nil
 		}
 }

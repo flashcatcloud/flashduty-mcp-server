@@ -44,6 +44,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			mcp.WithString("query", mcp.Description("Free-text search across title, labels, and content (Doris full-text). A 24-char hex string is resolved as an incident ID; a 6-char string is resolved as an incident num. Prefer this over picking exact filter values when the user gives a fuzzy keyword."), mcp.MaxLength(200)),
 			mcp.WithString("nums", mcp.Description("Comma-separated short incident ids (num — the 6-char id shown in the UI, e.g. 311510). Matched within the since/until window; the backend caps the list span at ~30 days, so incidents older than that must be looked up by their full incident_id.")),
 			mcp.WithNumber("limit", mcp.Description(LimitDescription), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithNumber("page", mcp.Description(PageDescription), mcp.DefaultNumber(1), mcp.Min(1)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -57,7 +58,7 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			channelIdsStr, _ := OptionalParam[string](request, "channel_ids")
 			query, _ := OptionalParam[string](request, "query")
 			nums, _ := OptionalParam[string](request, "nums")
-			limit, _ := OptionalInt(request, "limit")
+			limit, page := optionalPaging(request, defaultQueryLimit)
 
 			startTime, err := timeutil.ParseAny(args["since"])
 			if err != nil {
@@ -83,10 +84,6 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				}
 				endTime = time.Now().Unix()
 				startTime = endTime - int64(DefaultIncidentWindow/time.Second)
-			}
-
-			if limit <= 0 {
-				limit = defaultQueryLimit
 			}
 
 			// Direct ID lookup uses /incident/list-by-ids (ListByIDs), which does
@@ -125,6 +122,11 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				Query:            query,
 			}
 			req.Limit = limit
+			// page 1 is the default; only send `p` when advancing so the
+			// wire payload stays unchanged for callers that don't paginate.
+			if page > 1 {
+				req.Page = page
+			}
 
 			if channelIdsStr != "" {
 				channelIDs := parseCommaSeparatedInts(channelIdsStr)
@@ -151,10 +153,10 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 			}
 
 			total := int(out.Total)
-			return MarshalResult(addTruncationHint(map[string]any{
+			return MarshalResult(addPageHint(map[string]any{
 				"incidents": out.Items,
 				"total":     total,
-			}, len(out.Items), total)), nil
+			}, len(out.Items), total, page, limit)), nil
 		}
 }
 
@@ -220,7 +222,8 @@ func QueryIncidentAlerts(getClient GetFlashdutyClientFn, t translations.Translat
 				ReadOnlyHint: ToBoolPtr(true),
 			}),
 			mcp.WithString("incident_ids", mcp.Required(), mcp.Description("Comma-separated incident IDs to query alerts for.")),
-			mcp.WithNumber("limit", mcp.Description("Maximum alerts per incident."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithNumber("limit", mcp.Description("Maximum alerts per incident per page. Default 20, max 100. When an incident has more alerts than returned, its entry carries `truncated:true` and a `hint`."), mcp.DefaultNumber(20), mcp.Min(1), mcp.Max(100)),
+			mcp.WithNumber("page", mcp.Description("1-based page number, applied to every requested incident. Default 1. When an incident's entry is `truncated`, request `page:2` (then 3, …) to fetch its remaining alerts."), mcp.DefaultNumber(1), mcp.Min(1)),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			ctx, client, err := getClient(ctx)
 			if err != nil {
@@ -237,26 +240,28 @@ func QueryIncidentAlerts(getClient GetFlashdutyClientFn, t translations.Translat
 				return mcp.NewToolResultError("incident_ids must contain at least one valid ID"), nil
 			}
 
-			limit, _ := OptionalInt(request, "limit")
-			if limit <= 0 {
-				limit = defaultQueryLimit
-			}
+			limit, page := optionalPaging(request, defaultQueryLimit)
 
 			// go-flashduty's Incidents.AlertList returns one incident's alerts
-			// per call, so fan out across the requested IDs.
+			// per call, so fan out across the requested IDs. The page applies
+			// uniformly to each incident's alert list.
 			response := make([]map[string]any, 0, len(incidentIDs))
 			for _, id := range incidentIDs {
 				alertReq := &flashduty.ListIncidentAlertsRequest{IncidentID: id}
 				alertReq.Limit = limit
+				if page > 1 {
+					alertReq.Page = page
+				}
 				out, _, err := client.New.Incidents.AlertList(ctx, alertReq)
 				if err != nil {
 					return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve alerts for %s: %v", id, err)), nil
 				}
-				response = append(response, map[string]any{
+				total := int(out.Total)
+				response = append(response, addPageHint(map[string]any{
 					"incident_id": id,
 					"alerts":      out.Items,
-					"total":       int(out.Total),
-				})
+					"total":       total,
+				}, len(out.Items), total, page, limit))
 			}
 
 			return MarshalResult(map[string]any{
