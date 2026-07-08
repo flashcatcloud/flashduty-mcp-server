@@ -44,6 +44,10 @@ type FlashdutyConfig struct {
 	Translator translations.TranslationHelperFunc
 }
 
+// serverInstructions is the default text returned to clients in the
+// initialize response; see cfg.Translator for how it can be overridden.
+const serverInstructions = "This server provides a curated, task-oriented toolset for Flashduty; it intentionally does not mirror the full Flashduty Open API. For operations not covered by these tools, use the Flashduty CLI (https://github.com/flashcatcloud/flashduty-cli), which covers the open API 1:1 — agents with shell access can drive it directly."
+
 func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 	// When a client send an initialize request, update the user agent to include the client info.
 	beforeInit := func(ctx context.Context, _ any, message *mcp.InitializeRequest) {
@@ -113,7 +117,7 @@ func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 		},
 	}
 
-	flashdutyServer := server.NewMCPServer("flashduty-mcp-server", cfg.Version, server.WithHooks(hooks))
+	flashdutyServer := server.NewMCPServer("flashduty-mcp-server", cfg.Version, server.WithHooks(hooks), server.WithInstructions(cfg.Translator("SERVER_INSTRUCTIONS", serverInstructions)))
 
 	getClientFn := func(ctx context.Context) (context.Context, *flashduty.Clients, error) {
 		return getClient(ctx, cfg, cfg.Version)

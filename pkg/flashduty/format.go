@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	toon "github.com/toon-format/toon-go"
-
 	"github.com/mark3labs/mcp-go/mcp"
+	toon "github.com/toon-format/toon-go"
 )
 
 // OutputFormat defines the serialization format for tool results.

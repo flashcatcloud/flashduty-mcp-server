@@ -4,6 +4,9 @@
 
 Flashduty MCP Server 是一个基于 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) 的服务，提供与 Flashduty API 的无缝对接，帮助开发者和工具实现智能化的故障管理与自动化运维。
 
+> [!NOTE]
+> **刻意保持精简。**本服务只提供一小组面向任务的工具，而非 1:1 镜像全部 Flashduty 开放 API——庞大的工具清单会挤占模型上下文并降低工具选择准确率。如需完整覆盖全部开放 API，请使用 [Flashduty CLI](https://github.com/flashcatcloud/flashduty-cli)，具备 shell 能力的 AI Agent 可直接调用它。
+
 ### 应用场景
 
 - 自动化 Flashduty 工作流程

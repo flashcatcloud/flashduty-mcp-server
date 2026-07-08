@@ -4,6 +4,9 @@ English | [中文](README_zh.md)
 
 The Flashduty MCP Server is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction) server that provides seamless integration with Flashduty APIs, enabling advanced incident management and automation capabilities for developers and tools.
 
+> [!NOTE]
+> **Curated by design.** This server exposes a small, task-oriented toolset rather than mirroring the full Flashduty Open API — large 1:1 tool catalogs bloat model context and degrade tool selection. For 1:1 coverage of every open API operation, use the [Flashduty CLI](https://github.com/flashcatcloud/flashduty-cli); AI agents with shell access can drive it directly.
+
 ### Use Cases
 
 - Automating Flashduty workflows and processes.
