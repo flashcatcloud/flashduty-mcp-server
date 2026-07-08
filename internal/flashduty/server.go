@@ -24,19 +24,6 @@ import (
 	"github.com/flashcatcloud/flashduty-mcp-server/pkg/translations"
 )
 
-// slogAdapter adapts slog.Logger to mcp-go's util.Logger interface
-type slogAdapter struct {
-	logger *slog.Logger
-}
-
-func (a *slogAdapter) Infof(format string, v ...any) {
-	a.logger.Info(fmt.Sprintf(format, v...))
-}
-
-func (a *slogAdapter) Errorf(format string, v ...any) {
-	a.logger.Error(fmt.Sprintf(format, v...))
-}
-
 type FlashdutyConfig struct {
 	// Version of the server
 	Version string
@@ -148,7 +135,10 @@ func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 func newStreamableHTTPServer(mcpServer *server.MCPServer, logger *slog.Logger, contextFunc server.HTTPContextFunc) *server.StreamableHTTPServer {
 	return server.NewStreamableHTTPServer(
 		mcpServer,
-		server.WithLogger(&slogAdapter{logger: logger}),
+		// mcp-go v0.55 renamed the transport logger option to
+		// WithStreamableHTTPLogger and switched it to *slog.Logger, so the
+		// former slogAdapter shim is no longer needed.
+		server.WithStreamableHTTPLogger(logger),
 		// Return 405 for GET requests — this server doesn't use server-initiated
 		// features (sampling, elicitation). Without this, the SDK's standalone SSE
 		// GET hangs indefinitely because mcp-go creates an orphan session and blocks.
