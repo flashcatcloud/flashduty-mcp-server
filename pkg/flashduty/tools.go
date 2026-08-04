@@ -6,7 +6,7 @@ import (
 )
 
 // DefaultTools is the default list of enabled Flashduty toolsets
-var DefaultTools = []string{"incidents", "alerts", "changes", "status_page", "users", "channels", "fields", "templates"}
+var DefaultTools = []string{"incidents", "alerts", "changes", "status_page", "users", "channels", "fields", "templates", "rum"}
 
 // DefaultToolsetGroup returns the default toolset group for Flashduty
 func DefaultToolsetGroup(getClient GetFlashdutyClientFn, readOnly bool, t translations.TranslationHelperFunc) *toolsets.ToolsetGroup {
@@ -86,6 +86,18 @@ func DefaultToolsetGroup(getClient GetFlashdutyClientFn, readOnly bool, t transl
 			toolsets.NewServerTool(ListTemplateFunctions(getClient, t)),
 		)
 	group.AddToolset(templates)
+
+	// RUM toolset (5 tools) — front-end error & analytics surface for no-shell
+	// hosts (Cursor / Claude Desktop / product-embedded assistants). Read-only.
+	rum := toolsets.NewToolset("rum", "Real User Monitoring (front-end error & analytics) tools").
+		AddReadTools(
+			toolsets.NewServerTool(QueryRUMApplications(getClient, t)),
+			toolsets.NewServerTool(QueryRUMIssues(getClient, t)),
+			toolsets.NewServerTool(GetRUMIssue(getClient, t)),
+			toolsets.NewServerTool(QueryRUMData(getClient, t)),
+			toolsets.NewServerTool(EnrichRUMStack(getClient, t)),
+		)
+	group.AddToolset(rum)
 
 	return group
 }
