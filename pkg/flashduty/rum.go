@@ -191,7 +191,7 @@ func QueryRUMData(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 			}),
 			mcp.WithString("sql", mcp.Description("Full RUM SELECT. FROM error/action/resource/view/session. The time column is event_time; the since/until window is injected automatically, so filter only on business conditions."), mcp.Required()),
 			mcp.WithString("format", mcp.Description("Output format. table = rows; time_series = points bucketed by interval."), mcp.Enum("table", "time_series"), mcp.DefaultString("table")),
-			mcp.WithNumber("interval", mcp.Description("Time bucket size in seconds. Only used when format=time_series (e.g. 60 for per-minute).")),
+			mcp.WithNumber("interval", mcp.Description("Time bucket size in seconds. Only used when format=time_series (e.g. 60 for per-minute). The backend floors buckets at 30s.")),
 			WithSince(mcp.Required()),
 			WithUntil(),
 		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -217,7 +217,9 @@ func QueryRUMData(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 
 			q := flashduty.RUMDataQueryDefinition{ID: "q1", Sql: sql, Format: format}
 			if format == "time_series" && interval > 0 {
-				q.Interval = int64(interval)
+				// The API takes the bucket size in milliseconds, despite the
+				// upstream schema comment saying seconds.
+				q.Interval = rumMillis(int64(interval))
 			}
 			req := &flashduty.RUMDataQueryRequest{
 				StartTime: startMs,
