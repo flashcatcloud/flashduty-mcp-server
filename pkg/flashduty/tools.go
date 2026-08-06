@@ -87,13 +87,12 @@ func DefaultToolsetGroup(getClient GetFlashdutyClientFn, readOnly bool, t transl
 		)
 	group.AddToolset(templates)
 
-	// RUM toolset (5 tools) — front-end error & analytics surface for no-shell
+	// RUM toolset (4 tools) — front-end error & analytics surface for no-shell
 	// hosts (Cursor / Claude Desktop / product-embedded assistants). Read-only.
 	rum := toolsets.NewToolset("rum", "Real User Monitoring (front-end error & analytics) tools").
 		AddReadTools(
 			toolsets.NewServerTool(QueryRUMApplications(getClient, t)),
 			toolsets.NewServerTool(QueryRUMIssues(getClient, t)),
-			toolsets.NewServerTool(GetRUMIssue(getClient, t)),
 			toolsets.NewServerTool(QueryRUMData(getClient, t)),
 			toolsets.NewServerTool(EnrichRUMStack(getClient, t)),
 		)

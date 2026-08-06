@@ -83,7 +83,7 @@ func QueryRUMApplications(getClient GetFlashdutyClientFn, t translations.Transla
 		}
 }
 
-const queryRUMIssuesDescription = `List RUM error issues for one or more applications within a time window, ordered by error count (noisiest first). An "issue" groups many occurrences of the same front-end error. Use get_rum_issue for the full stack of a specific issue. Requires application_ids (get them from query_rum_applications) and a since bound.`
+const queryRUMIssuesDescription = `List RUM error issues for one or more applications within a time window, ordered by error count (noisiest first). An "issue" groups many occurrences of the same front-end error. The rows carry the error type, message, count, versions and an auto-diagnosed suspected cause, but not the stack trace — use query_rum_data to pull error_stack for a specific issue_id. Requires application_ids (get them from query_rum_applications) and a since bound.`
 
 // QueryRUMIssues creates a tool to list RUM error issues.
 func QueryRUMIssues(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -149,37 +149,7 @@ func QueryRUMIssues(getClient GetFlashdutyClientFn, t translations.TranslationHe
 		}
 }
 
-const getRUMIssueDescription = `Get the full detail of one RUM error issue by issue_id: error type, message, the page URL where it fires, the complete stack trace, affected session count, versions, first/last seen. This is the payload to feed an agent that will locate the offending code.`
-
-// GetRUMIssue creates a tool to fetch a single RUM issue's detail.
-func GetRUMIssue(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
-	return mcp.NewTool("get_rum_issue",
-			mcp.WithDescription(t("TOOL_GET_RUM_ISSUE_DESCRIPTION", getRUMIssueDescription)),
-			mcp.WithToolAnnotation(mcp.ToolAnnotation{
-				Title:        t("TOOL_GET_RUM_ISSUE_USER_TITLE", "Get RUM issue detail"),
-				ReadOnlyHint: ToBoolPtr(true),
-			}),
-			mcp.WithString("issue_id", mcp.Description("The RUM issue ID (from query_rum_issues)."), mcp.Required()),
-		), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			ctx, client, err := getClient(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get Flashduty client: %w", err)
-			}
-
-			issueID, err := RequiredParam[string](request, "issue_id")
-			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
-			}
-
-			out, _, err := client.New.Issues.ReadInfo(ctx, &flashduty.RUMIssueIDRequest{IssueID: issueID})
-			if err != nil {
-				return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve RUM issue: %v", err)), nil
-			}
-			return MarshalResult(out), nil
-		}
-}
-
-const queryRUMDataDescription = `Run one ad-hoc RUM SQL query over raw events — the engine behind self-service analytics and custom dashboards. FROM one of: error, action, resource, view, session. format=table returns rows; format=time_series returns points bucketed by interval (seconds). Translate the user's natural-language ask into SQL, e.g. "SELECT browser_name, count(*) AS cnt FROM error GROUP BY browser_name ORDER BY cnt DESC LIMIT 10". Window (since/until) max 31 days.`
+const queryRUMDataDescription = `Run one ad-hoc RUM SQL query over raw events — the engine behind self-service analytics and custom dashboards. FROM one of: error, action, resource, view, session. format=table returns rows; format=time_series returns points bucketed by interval (seconds). Translate the user's natural-language ask into SQL, e.g. "SELECT browser_name, count(*) AS cnt FROM error GROUP BY browser_name ORDER BY cnt DESC LIMIT 10". This is also how you get one issue's stack trace and page URL, which query_rum_issues does not carry: "SELECT error_stack, view_url FROM error WHERE issue_id = '<id>' LIMIT 1". Window (since/until) max 31 days.`
 
 // QueryRUMData creates a tool to run an ad-hoc RUM SQL analytics query.
 func QueryRUMData(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
@@ -235,7 +205,7 @@ func QueryRUMData(getClient GetFlashdutyClientFn, t translations.TranslationHelp
 		}
 }
 
-const enrichRUMStackDescription = `Turn a minified/compressed front-end stack trace back into source file:line using the sourcemap uploaded for a given service + version. Feed it the raw stack from get_rum_issue when the frames are unreadable.`
+const enrichRUMStackDescription = `Turn a minified/compressed front-end stack trace back into source file:line using the sourcemap uploaded for a given service + version. Feed it the error_stack you pulled via query_rum_data when the frames are unreadable.`
 
 // EnrichRUMStack creates a tool to symbolicate a stack via sourcemaps.
 func EnrichRUMStack(getClient GetFlashdutyClientFn, t translations.TranslationHelperFunc) (tool mcp.Tool, handler server.ToolHandlerFunc) {
