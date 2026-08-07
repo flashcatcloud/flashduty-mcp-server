@@ -274,26 +274,34 @@ export FLASHDUTY_MCP_TOOL_CREATE_INCIDENT_DESCRIPTION="自定义描述"
 
 | 工具集 | 说明 | 工具数 |
 | --- | --- | --- |
-| `incidents` | 故障生命周期管理 | 6 |
+| `incidents` | 故障生命周期管理 | 8 |
+| `alerts` | 告警事件查询 | 1 |
 | `changes` | 变更记录查询 | 1 |
 | `status_page` | 状态页管理 | 4 |
 | `users` | 成员和团队查询 | 2 |
 | `channels` | 协作空间和分派策略 | 2 |
 | `fields` | 自定义字段定义 | 1 |
+| `templates` | 通知模板管理与校验 | 4 |
+| `rum` | 真实用户监控（前端错误与分析） | 4 |
 
-**共计 16 个工具**
+**共计 27 个工具**
 
 ---
 
 ## 工具列表
 
-### `incidents` - 故障管理 (6)
+### `incidents` - 故障管理 (8)
 - `query_incidents` - 查询故障（含时间线、告警、响应人等完整信息）
+- `query_incident_timeline` - 查询故障时间线事件
+- `query_incident_alerts` - 查询故障下的告警
+- `list_similar_incidents` - 查找相似历史故障
 - `create_incident` - 创建故障
 - `update_incident` - 更新故障（标题、描述、严重程度、自定义字段）
 - `ack_incident` - 认领故障
 - `close_incident` - 关闭故障
-- `list_similar_incidents` - 查找相似历史故障
+
+### `alerts` - 告警查询 (1)
+- `query_alert_events` - 查询某条告警的原始上游事件流
 
 ### `changes` - 变更管理 (1)
 - `query_changes` - 查询变更记录
@@ -314,6 +322,27 @@ export FLASHDUTY_MCP_TOOL_CREATE_INCIDENT_DESCRIPTION="自定义描述"
 
 ### `fields` - 字段管理 (1)
 - `query_fields` - 查询自定义字段定义
+
+### `templates` - 通知模板 (4)
+- `get_preset_template` - 获取指定通道的预置通知模板
+- `validate_template` - 用故障数据渲染模板并返回预览，校验模板是否正确
+- `list_template_variables` - 列出可用的模板变量（含类型和示例值）
+- `list_template_functions` - 列出可用的模板函数（FlashDuty 自定义 + Sprig）
+
+### `rum` - 真实用户监控 (4)
+
+只读的前端错误与分析能力。主要面向没有 shell 的宿主（Cursor / Claude Desktop / 嵌入产品内的助手）——
+这些场景下 Agent 无法退回去调用 Flashduty CLI。
+
+- `query_rum_applications` - 按名称搜索 RUM 应用，拿到 `application_id`
+- `query_rum_issues` - 查询指定应用在某时间窗内的错误 issue，按错误数从高到低排列
+- `query_rum_data` - 对原始事件（`error` / `action` / `resource` / `view` / `session`）执行 RUM SQL 查询，支持表格和时间序列两种输出
+- `enrich_rum_stack` - 用已上传的 sourcemap 把压缩后的堆栈还原成 `文件:行号`
+
+典型链路：`query_rum_applications` → `query_rum_issues` → `query_rum_data`
+（`SELECT error_stack, view_url FROM error WHERE issue_id = '<id>' LIMIT 1`）→
+`enrich_rum_stack`。时间窗（`since` / `until`）最长 31 天；`query_rum_data` 会自动注入时间条件，
+SQL 里只需写业务过滤条件。
 
 ---
 

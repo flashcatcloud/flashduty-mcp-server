@@ -295,26 +295,34 @@ The following toolsets are available (all are on by default). You can also use `
 
 | Toolset        | Description                                      | Tools |
 | -------------- | ------------------------------------------------ | ----- |
-| `incidents`    | Incident lifecycle management                    | 6     |
+| `incidents`    | Incident lifecycle management                    | 8     |
+| `alerts`       | Alert event query                                | 1     |
 | `changes`      | Change record query                              | 1     |
 | `status_page`  | Status page management                           | 4     |
 | `users`        | Member and team query                            | 2     |
 | `channels`     | Channels and escalation rules                    | 2     |
 | `fields`       | Custom field definitions                         | 1     |
+| `templates`    | Notification template management and validation  | 4     |
+| `rum`          | Real User Monitoring (front-end errors, analytics) | 4   |
 
-**Total: 16 tools**
+**Total: 27 tools**
 
 ---
 
 ## Tools
 
-### `incidents` - Incident Lifecycle Management (6 tools)
+### `incidents` - Incident Lifecycle Management (8 tools)
 - `query_incidents` - Query incidents with enriched data (timeline, alerts, responders)
+- `query_incident_timeline` - Query timeline events for incidents
+- `query_incident_alerts` - Query alerts belonging to incidents
+- `list_similar_incidents` - Find similar historical incidents
 - `create_incident` - Create a new incident
 - `update_incident` - Update incident (title, description, severity, custom_fields)
 - `ack_incident` - Acknowledge incidents
 - `close_incident` - Close (resolve) incidents
-- `list_similar_incidents` - Find similar historical incidents
+
+### `alerts` - Alert Event Query (1 tool)
+- `query_alert_events` - Query the raw upstream event stream that produced an alert
 
 ### `changes` - Change Record Query (1 tool)
 - `query_changes` - Query change records with filters
@@ -335,6 +343,29 @@ The following toolsets are available (all are on by default). You can also use `
 
 ### `fields` - Custom Field Definitions (1 tool)
 - `query_fields` - Query custom field definitions
+
+### `templates` - Notification Templates (4 tools)
+- `get_preset_template` - Fetch the preset notification template for a channel
+- `validate_template` - Parse and render a template against incident data, returning a preview
+- `list_template_variables` - List available template variables with types and examples
+- `list_template_functions` - List available template functions (FlashDuty + Sprig)
+
+### `rum` - Real User Monitoring (4 tools)
+
+Read-only front-end error and analytics surface. Aimed at hosts without shell access
+(Cursor / Claude Desktop / product-embedded assistants), where an agent cannot fall back
+to the Flashduty CLI.
+
+- `query_rum_applications` - Look up RUM applications by name, returning their `application_id`
+- `query_rum_issues` - List error issues for one or more applications in a time window, noisiest first
+- `query_rum_data` - Run an ad-hoc RUM SQL query over raw events (`error` / `action` / `resource` / `view` / `session`), as a table or a time series
+- `enrich_rum_stack` - Symbolicate a minified stack trace back to `file:line` using the uploaded sourcemap
+
+Typical flow: `query_rum_applications` → `query_rum_issues` → `query_rum_data`
+(`SELECT error_stack, view_url FROM error WHERE issue_id = '<id>' LIMIT 1`) →
+`enrich_rum_stack`. The time window (`since` / `until`) is capped at 31 days, and
+`query_rum_data` injects it automatically — write SQL that filters on business
+conditions only.
 
 ---
 
