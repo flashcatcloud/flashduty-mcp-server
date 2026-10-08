@@ -163,10 +163,10 @@ func CreateStatusIncident(getClient GetFlashdutyClientFn, t translations.Transla
 			// (or the title when no message), and the affected components.
 			update := flashduty.CreateStatusPageChangeRequestUpdatesItem{
 				AtSeconds: time.Now().Unix(),
-				Status:    status,
+				Status:    &status,
 			}
 			if message != "" {
-				update.Description = message
+				update.Description = &message
 			}
 			update.ComponentChanges = parseAffectedComponents(affectedComponents)
 

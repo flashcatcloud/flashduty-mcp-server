@@ -34,9 +34,15 @@ Flashduty MCP Server 是一个基于 [Model Context Protocol (MCP)](https://mode
 ### 前置条件
 
 1. 支持 MCP 协议的客户端，如 [Cursor](https://www.cursor.com/)
-2. Flashduty 账户的 APP Key
+2. Flashduty 账户。支持 MCP OAuth 的客户端在浏览器中登录授权；其他客户端需要 APP Key
 
 ### 配置示例
+
+#### OAuth 方式（claude.ai、Claude Desktop、ChatGPT 连接器）
+
+添加自定义连接器，URL 填 `https://mcp.flashcat.cloud/mcp`，不填凭据。客户端会自动发现 Flashduty 授权服务器，在浏览器中打开 Flashduty 授权页；授权后以你的身份调用 Flashduty Open API，权限与 APP Key 相同。
+
+#### APP Key 方式
 
 <span id="remote-cursor"></span>
 
@@ -55,7 +61,7 @@ Flashduty MCP Server 是一个基于 [Model Context Protocol (MCP)](https://mode
 }
 ```
 
-> **提示：** 具体配置位置请参考你所使用的 MCP 客户端文档。
+> **提示：** 具体配置位置请参考你所使用的 MCP 客户端文档。未携带 OAuth Token 或 APP Key 的请求会收到 `401`，`WWW-Authenticate` 头指向 `/.well-known/oauth-protected-resource/mcp`。
 
 ---
 
@@ -156,7 +162,7 @@ Flashduty MCP Server 支持以下配置：
 }
 ```
 
-- `headers.Authorization`：用于认证的 Flashduty APP Key，需添加 `Bearer ` 前缀
+- `headers.Authorization`：用于认证的 Flashduty APP Key，需添加 `Bearer ` 前缀；使用 OAuth 登录时省略
 - `toolsets=...`：启用指定的工具集，多个用逗号分隔
 - `read_only=true`：启用只读模式
 

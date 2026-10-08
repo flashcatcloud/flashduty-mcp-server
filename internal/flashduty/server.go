@@ -34,6 +34,10 @@ type FlashdutyConfig struct {
 	// Flashduty APP Key to authenticate with the Flashduty API
 	APPKey string
 
+	// AccessToken is an OAuth access token issued by the Flashduty
+	// authorization server; when set it is used instead of APPKey.
+	AccessToken string
+
 	// EnabledToolsets is a list of toolsets to enable
 	EnabledToolsets []string
 
@@ -274,8 +278,13 @@ type HTTPServerConfig struct {
 	LogFilePath string
 }
 
-// extractAppKey extracts app_key from Authorization header or query parameters
-func extractAppKey(r *http.Request) string {
+// oauthTokenPrefix marks access tokens issued by the Flashduty authorization
+// server; any other bearer credential is an APP key.
+const oauthTokenPrefix = "oauth:"
+
+// extractCredential extracts the bearer credential from the Authorization
+// header, falling back to the app_key query parameter.
+func extractCredential(r *http.Request) string {
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		tokenParts := strings.Split(authHeader, " ")
 		if len(tokenParts) == 2 && strings.ToLower(tokenParts[0]) == "bearer" {
@@ -294,19 +303,88 @@ func httpContextFunc(ctx context.Context, r *http.Request, defaultBaseURL string
 		enabledToolsets = strings.Split(toolsets, ",")
 	}
 
-	baseURL := queryParams.Get("base_url")
-	if baseURL == "" {
-		baseURL = defaultBaseURL
-	}
-
 	cfg := FlashdutyConfig{
-		BaseURL:         baseURL,
-		APPKey:          extractAppKey(r),
+		BaseURL:         defaultBaseURL,
 		EnabledToolsets: enabledToolsets,
 		ReadOnly:        queryParams.Get("read_only") == "true",
 	}
 
+	// An OAuth access token is only valid at the API of the authorization
+	// server that issued it, so it never follows a ?base_url= override.
+	credential := extractCredential(r)
+	if strings.HasPrefix(credential, oauthTokenPrefix) {
+		cfg.AccessToken = credential
+	} else {
+		cfg.APPKey = credential
+		if baseURL := queryParams.Get("base_url"); baseURL != "" {
+			cfg.BaseURL = baseURL
+		}
+	}
+
 	return ContextWithConfig(ctx, cfg)
+}
+
+// requestOrigin returns the scheme and host the client used to reach this
+// server, honoring X-Forwarded-Proto/X-Forwarded-Host set by a reverse proxy.
+func requestOrigin(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if proto := firstHeaderValue(r, "X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+	host := r.Host
+	if fwdHost := firstHeaderValue(r, "X-Forwarded-Host"); fwdHost != "" {
+		host = fwdHost
+	}
+	return scheme + "://" + host
+}
+
+// firstHeaderValue returns the first entry of a possibly comma-separated
+// header value, as appended by chained proxies.
+func firstHeaderValue(r *http.Request, name string) string {
+	v, _, _ := strings.Cut(r.Header.Get(name), ",")
+	return strings.TrimSpace(v)
+}
+
+// requireCredential answers requests that carry no credential with 401 and a
+// WWW-Authenticate challenge pointing at the protected resource metadata
+// (RFC 9728 §5.1), which starts the MCP OAuth authorization flow.
+func requireCredential(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if extractCredential(r) == "" {
+			metadataURL := requestOrigin(r) + server.WellKnownProtectedResourcePath + r.URL.Path
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf("Bearer resource_metadata=%q", metadataURL))
+			http.Error(w, "missing credential: authenticate with OAuth or send Authorization: Bearer <app_key>", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// protectedResourceMetadataHandler serves RFC 9728 metadata for the MCP
+// endpoint at path. The resource identifier is derived from the request
+// origin; the authorization server is the Flashduty API base URL.
+func protectedResourceMetadataHandler(path, authorizationServer string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server.NewProtectedResourceMetadataHandler(server.ProtectedResourceMetadataConfig{
+			Resource:             requestOrigin(r) + path,
+			AuthorizationServers: []string{authorizationServer},
+		}).ServeHTTP(w, r)
+	})
+}
+
+// newHTTPMux routes the MCP endpoints behind requireCredential and serves
+// their protected resource metadata. The root well-known path describes /mcp.
+func newHTTPMux(mcpHandler http.Handler, baseURL string) *http.ServeMux {
+	mux := http.NewServeMux()
+	for _, path := range []string{"/mcp", "/flashduty"} { // /flashduty is kept for backward compatibility
+		mux.Handle(path, requireCredential(mcpHandler))
+		mux.Handle(server.WellKnownProtectedResourcePath+path, protectedResourceMetadataHandler(path, baseURL))
+	}
+	mux.Handle(server.WellKnownProtectedResourcePath, protectedResourceMetadataHandler("/mcp", baseURL))
+	return mux
 }
 
 func RunHTTPServer(cfg HTTPServerConfig) error {
@@ -359,13 +437,9 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 		return httpContextFunc(ctx, r, cfg.BaseURL)
 	})
 
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", httpServer)
-	mux.Handle("/flashduty", httpServer) // Keep for backward compatibility
-
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           mux,
+		Handler:           newHTTPMux(httpServer, cfg.BaseURL),
 		ReadHeaderTimeout: 30 * time.Second,
 		ReadTimeout:       0,                // No timeout for streaming
 		WriteTimeout:      0,                // No timeout for streaming
