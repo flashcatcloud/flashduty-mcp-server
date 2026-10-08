@@ -34,9 +34,13 @@ The remote Flashduty MCP Server provides the easiest method for getting up and r
 ### Prerequisites
 
 1. An MCP host that supports the latest MCP specification and remote servers, such as [Cursor](https://www.cursor.com/).
-2. A Flashduty APP key from your Flashduty account.
+2. A Flashduty account. Hosts that support MCP OAuth sign you in through the browser; other hosts need a Flashduty APP key.
 
 ### Installation
+
+#### With OAuth (claude.ai, Claude Desktop, ChatGPT connectors)
+
+Add a custom connector with the URL `https://mcp.flashcat.cloud/mcp` and no credentials. The host discovers the Flashduty authorization server, opens a Flashduty consent page in your browser, and acts as you through the Flashduty Open API, the same access an APP key grants.
 
 <span id="remote-cursor"></span>
 
@@ -57,7 +61,7 @@ For Cursors that support Remote MCP, use the following configuration:
 }
 ```
 
-> **Note:** Refer to your MCP host's documentation for the correct syntax and location for remote MCP server setup.
+> **Note:** Refer to your MCP host's documentation for the correct syntax and location for remote MCP server setup. Requests with neither an OAuth token nor an APP key receive `401` with a `WWW-Authenticate` header pointing to `/.well-known/oauth-protected-resource/mcp`.
 
 ---
 
@@ -169,7 +173,7 @@ Here is an example of configuring the remote service, specifying toolsets and re
 }
 ```
 
-- `headers.Authorization`: Your Flashduty APP key for authentication, prefixed with `Bearer `.
+- `headers.Authorization`: Your Flashduty APP key for authentication, prefixed with `Bearer `. Omit it when the host signs in with OAuth.
 - `toolsets=...`: Use a comma-separated list to specify the toolsets to enable (e.g., `incidents,users,channels`).
 - `read_only=true`: Enables read-only mode.
 

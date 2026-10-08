@@ -60,12 +60,16 @@ func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) 
 		cfg = defaultCfg
 	}
 
-	if cfg.APPKey == "" {
+	if cfg.APPKey == "" && cfg.AccessToken == "" {
 		return ctx, nil, fmt.Errorf("flashduty app key is not configured")
 	}
 
-	// Use APP key and BaseURL as cache key to handle different environments.
-	cacheKey := fmt.Sprintf("%s|%s", cfg.APPKey, cfg.BaseURL)
+	// Key by credential kind, credential and BaseURL so app keys and OAuth
+	// access tokens never share an entry, and environments stay separate.
+	cacheKey := fmt.Sprintf("app_key|%s|%s", cfg.APPKey, cfg.BaseURL)
+	if cfg.AccessToken != "" {
+		cacheKey = fmt.Sprintf("access_token|%s|%s", cfg.AccessToken, cfg.BaseURL)
+	}
 	if cached, err := clientCache.Get(cacheKey); err == nil {
 		clients := cached.(*flashduty.Clients)
 		return contextWithClients(ctx, clients), clients, nil
@@ -86,7 +90,13 @@ func getClient(ctx context.Context, defaultCfg FlashdutyConfig, version string) 
 	if cfg.BaseURL != "" {
 		newOpts = append(newOpts, goflashduty.WithBaseURL(cfg.BaseURL))
 	}
-	newClient, err := goflashduty.NewClient(cfg.APPKey, newOpts...)
+	var newClient *goflashduty.Client
+	var err error
+	if cfg.AccessToken != "" {
+		newClient, err = goflashduty.NewClientWithAccessToken(cfg.AccessToken, newOpts...)
+	} else {
+		newClient, err = goflashduty.NewClient(cfg.APPKey, newOpts...)
+	}
 	if err != nil {
 		return ctx, nil, fmt.Errorf("failed to create go-flashduty client: %w", err)
 	}
