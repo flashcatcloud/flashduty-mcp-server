@@ -80,9 +80,28 @@ func TestHTTPMux_MissingCredentialChallenges(t *testing.T) {
 		want    string
 	}{
 		{
-			name: "direct",
+			// A TLS-terminating load balancer that sets no X-Forwarded-Proto.
+			name: "no forwarded proto",
 			path: "/mcp",
-			want: `Bearer resource_metadata="http://mcp.example.com/.well-known/oauth-protected-resource/mcp"`,
+			want: `Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/mcp"`,
+		},
+		{
+			name:    "loopback",
+			path:    "/mcp",
+			headers: map[string]string{"X-Forwarded-Host": "127.0.0.1:11310"},
+			want:    `Bearer resource_metadata="http://127.0.0.1:11310/.well-known/oauth-protected-resource/mcp"`,
+		},
+		{
+			name:    "unknown forwarded proto",
+			path:    "/mcp",
+			headers: map[string]string{"X-Forwarded-Proto": "gopher"},
+			want:    `Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/mcp"`,
+		},
+		{
+			name:    "forwarded http",
+			path:    "/mcp",
+			headers: map[string]string{"X-Forwarded-Proto": "http", "X-Forwarded-Host": "mcp.internal"},
+			want:    `Bearer resource_metadata="http://mcp.internal/.well-known/oauth-protected-resource/mcp"`,
 		},
 		{
 			name:    "behind proxy",
@@ -93,7 +112,7 @@ func TestHTTPMux_MissingCredentialChallenges(t *testing.T) {
 		{
 			name: "legacy path",
 			path: "/flashduty",
-			want: `Bearer resource_metadata="http://mcp.example.com/.well-known/oauth-protected-resource/flashduty"`,
+			want: `Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/flashduty"`,
 		},
 	}
 	for _, tt := range tests {
@@ -161,17 +180,17 @@ func TestHTTPMux_ProtectedResourceMetadata(t *testing.T) {
 		{
 			name:         "path inserted",
 			path:         "/.well-known/oauth-protected-resource/mcp",
-			wantResource: "http://mcp.example.com/mcp",
+			wantResource: "https://mcp.example.com/mcp",
 		},
 		{
 			name:         "root describes /mcp",
 			path:         "/.well-known/oauth-protected-resource",
-			wantResource: "http://mcp.example.com/mcp",
+			wantResource: "https://mcp.example.com/mcp",
 		},
 		{
 			name:         "legacy path",
 			path:         "/.well-known/oauth-protected-resource/flashduty",
-			wantResource: "http://mcp.example.com/flashduty",
+			wantResource: "https://mcp.example.com/flashduty",
 		},
 		{
 			name:         "behind proxy",
