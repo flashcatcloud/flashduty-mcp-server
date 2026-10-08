@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -327,18 +328,37 @@ func httpContextFunc(ctx context.Context, r *http.Request, defaultBaseURL string
 // requestOrigin returns the scheme and host the client used to reach this
 // server, honoring X-Forwarded-Proto/X-Forwarded-Host set by a reverse proxy.
 func requestOrigin(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	if proto := firstHeaderValue(r, "X-Forwarded-Proto"); proto != "" {
-		scheme = proto
-	}
 	host := r.Host
 	if fwdHost := firstHeaderValue(r, "X-Forwarded-Host"); fwdHost != "" {
 		host = fwdHost
 	}
-	return scheme + "://" + host
+	return requestScheme(r, host) + "://" + host
+}
+
+// requestScheme trusts X-Forwarded-Proto when it names http or https. Without
+// it (a TLS-terminating load balancer that does not set the header), only a
+// loopback host is plain http: MCP clients require https for any other
+// authorization target, so the public resource is https.
+func requestScheme(r *http.Request, host string) string {
+	switch proto := strings.ToLower(firstHeaderValue(r, "X-Forwarded-Proto")); proto {
+	case "http", "https":
+		return proto
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	hostname := host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		hostname = h
+	}
+	hostname = strings.Trim(hostname, "[]")
+	if hostname == "localhost" {
+		return "http"
+	}
+	if ip := net.ParseIP(hostname); ip != nil && ip.IsLoopback() {
+		return "http"
+	}
+	return "https"
 }
 
 // firstHeaderValue returns the first entry of a possibly comma-separated
