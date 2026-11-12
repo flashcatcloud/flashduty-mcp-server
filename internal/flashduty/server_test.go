@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,6 +58,75 @@ func TestNewStreamableHTTPServer_RejectsSSEGet(t *testing.T) {
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405 Method Not Allowed for SSE GET, got %d", resp.StatusCode)
+	}
+}
+
+// TestNewStreamableHTTPServer_Stateless asserts that the server hands out no
+// session: initialize returns no Mcp-Session-Id, and a later request without
+// one is served. A session the server issues is kept in memory until the
+// client sends DELETE, so issuing none is what keeps memory flat.
+func TestNewStreamableHTTPServer_Stateless(t *testing.T) {
+	t.Parallel()
+
+	mcpServer, err := NewMCPServer(FlashdutyConfig{
+		Version:         "test",
+		Translator:      translations.NullTranslationHelper,
+		EnabledToolsets: []string{"incidents"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create MCP server: %v", err)
+	}
+
+	httpServer := newStreamableHTTPServer(
+		mcpServer,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		func(ctx context.Context, _ *http.Request) context.Context {
+			return ctx
+		},
+	)
+
+	ts := httptest.NewServer(httpServer)
+	defer ts.Close()
+
+	post := func(body string) (http.Header, []byte) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, ts.URL, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST %s: %v", body, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("read response: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("POST %s: status %d", body, resp.StatusCode)
+		}
+		return resp.Header, data
+	}
+
+	header, _ := post(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`)
+	if id := header.Get("Mcp-Session-Id"); id != "" {
+		t.Fatalf("initialize returned session id %q; want none", id)
+	}
+
+	_, data := post(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	var got struct {
+		Result struct {
+			Tools []json.RawMessage `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("decode tools/list: %v", err)
+	}
+	if len(got.Result.Tools) == 0 {
+		t.Fatal("tools/list without a session returned no tools")
 	}
 }
 

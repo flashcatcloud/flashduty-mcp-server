@@ -152,6 +152,12 @@ func newStreamableHTTPServer(mcpServer *server.MCPServer, logger *slog.Logger, c
 		// features (sampling, elicitation). Without this, the SDK's standalone SSE
 		// GET hangs indefinitely because mcp-go creates an orphan session and blocks.
 		server.WithDisableStreaming(true),
+		// Keep no per-session state. Credentials arrive with every request and
+		// nothing server-initiated is sent, so a session carries nothing. In
+		// stateful mode every initialize registers a session that is freed only
+		// by an explicit DELETE, which most clients never send, so memory grows
+		// with the number of handshakes until the process is killed.
+		server.WithStateLess(true),
 		server.WithHTTPContextFunc(contextFunc),
 	)
 }
