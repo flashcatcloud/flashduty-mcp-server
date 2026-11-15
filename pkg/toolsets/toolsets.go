@@ -2,6 +2,7 @@ package toolsets
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -217,7 +218,11 @@ func (tg *ToolsetGroup) IsEnabled(name string) bool {
 
 func (tg *ToolsetGroup) EnableToolsets(names []string) error {
 	// Special case for "all"
-	for _, name := range names {
+	for _, rawName := range names {
+		name := strings.TrimSpace(rawName)
+		if name == "" {
+			continue
+		}
 		if name == "all" {
 			tg.everythingOn = true
 			break
@@ -264,4 +269,41 @@ func (tg *ToolsetGroup) GetToolset(name string) (*Toolset, error) {
 		return nil, NewToolsetDoesNotExistError(name)
 	}
 	return toolset, nil
+}
+
+// ToolMetadata holds the toolset ownership and read-only classification of a tool.
+type ToolMetadata struct {
+	Toolset  string
+	ReadOnly bool
+}
+
+// ToolMetadataMap returns metadata for all tools across all toolsets in the group.
+func (tg *ToolsetGroup) ToolMetadataMap() map[string]ToolMetadata {
+	meta := make(map[string]ToolMetadata)
+	for tsName, ts := range tg.Toolsets {
+		for _, tool := range ts.readTools {
+			meta[tool.Tool.Name] = ToolMetadata{
+				Toolset:  tsName,
+				ReadOnly: true,
+			}
+		}
+		for _, tool := range ts.writeTools {
+			meta[tool.Tool.Name] = ToolMetadata{
+				Toolset:  tsName,
+				ReadOnly: false,
+			}
+		}
+	}
+	return meta
+}
+
+// EnabledToolsetSet returns the set of currently enabled toolset names in the group.
+func (tg *ToolsetGroup) EnabledToolsetSet() map[string]bool {
+	enabled := make(map[string]bool, len(tg.Toolsets))
+	for tsName, ts := range tg.Toolsets {
+		if tg.everythingOn || ts.Enabled {
+			enabled[tsName] = true
+		}
+	}
+	return enabled
 }

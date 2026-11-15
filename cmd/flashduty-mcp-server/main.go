@@ -39,20 +39,9 @@ var (
 				return errors.New("app key not provided: use --app-key flag or set FLASHDUTY_APP_KEY environment variable")
 			}
 
-			// If you're wondering why we're not using viper.GetStringSlice("toolsets"),
-			// it's because viper doesn't handle comma-separated values correctly for env
-			// vars when using GetStringSlice.
-			// https://github.com/spf13/viper/issues/380
-			var enabledToolsets []string
-			if viper.IsSet("toolsets") {
-				toolsetsVal := viper.Get("toolsets")
-				if s, ok := toolsetsVal.(string); ok {
-					enabledToolsets = strings.Split(s, ",")
-				} else if sl, ok := toolsetsVal.([]string); ok {
-					enabledToolsets = sl
-				} else {
-					return fmt.Errorf("failed to parse 'toolsets': unexpected type %T", toolsetsVal)
-				}
+			enabledToolsets, err := parseViperStringSlice("toolsets")
+			if err != nil {
+				return err
 			}
 
 			stdioServerConfig := flashduty.StdioServerConfig{
@@ -75,19 +64,46 @@ var (
 		Short: "Start HTTP server",
 		Long:  `Start a streamable HTTP server.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
+			enabledToolsets, err := parseViperStringSlice("toolsets")
+			if err != nil {
+				return err
+			}
+
 			httpServerConfig := flashduty.HTTPServerConfig{
-				Version:      version,
-				Commit:       commit,
-				Date:         date,
-				BaseURL:      viper.GetString("base_url"),
-				Port:         viper.GetString("port"),
-				OutputFormat: viper.GetString("output-format"),
-				LogFilePath:  viper.GetString("log-file"),
+				Version:         version,
+				Commit:          commit,
+				Date:            date,
+				BaseURL:         viper.GetString("base_url"),
+				EnabledToolsets: enabledToolsets,
+				ReadOnly:        viper.GetBool("read-only"),
+				Port:            viper.GetString("port"),
+				OutputFormat:    viper.GetString("output-format"),
+				LogFilePath:     viper.GetString("log-file"),
 			}
 			return flashduty.RunHTTPServer(httpServerConfig)
 		},
 	}
 )
+
+// parseViperStringSlice handles Viper's comma-separated string vs []string behavior for flags and env vars.
+// https://github.com/spf13/viper/issues/380
+func parseViperStringSlice(key string) ([]string, error) {
+	if !viper.IsSet(key) {
+		return nil, nil
+	}
+	val := viper.Get(key)
+	switch typed := val.(type) {
+	case string:
+		if strings.TrimSpace(typed) == "" {
+			return nil, nil
+		}
+		return strings.Split(typed, ","), nil
+	case []string:
+		return typed, nil
+	default:
+		return nil, fmt.Errorf("failed to parse %q: unexpected type %T", key, val)
+	}
+}
 
 func init() {
 	cobra.OnInitialize(initConfig)
@@ -132,7 +148,7 @@ func initConfig() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		fmt.Fprintf(os.Stderr, "%s\n", flashduty.RedactAppKey(err.Error()))
 		os.Exit(1)
 	}
 }
