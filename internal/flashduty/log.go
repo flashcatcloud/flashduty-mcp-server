@@ -2,13 +2,156 @@ package flashduty
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
+
+const maxSanitizedURLLogBytes = 200
+
+var (
+	appKeyQueryRegex   = regexp.MustCompile(`(?i)(app_key=)(\[REDACTED\]|[^&"'\s;,)>\]]*)`)
+	appKeyEncodedRegex = regexp.MustCompile(`(?i)(app_key%3d)(\[REDACTED\]|%5bredacted%5d|[^&"'\s;,)>\]]*)`)
+)
+
+// RedactAppKey masks any raw or URL-encoded app_key query parameter values in s.
+func RedactAppKey(s string) string {
+	if !containsFoldASCII(s, "app_key") {
+		return s
+	}
+	redacted := appKeyQueryRegex.ReplaceAllStringFunc(s, func(match string) string {
+		eqIdx := strings.IndexByte(match, '=')
+		if eqIdx == -1 {
+			return match
+		}
+		return match[:eqIdx+1] + "[REDACTED]"
+	})
+	redacted = appKeyEncodedRegex.ReplaceAllStringFunc(redacted, func(match string) string {
+		if len(match) < 10 {
+			return match
+		}
+		return match[:10] + "[REDACTED]"
+	})
+	return redacted
+}
+
+func containsFoldASCII(s, sub string) bool {
+	if len(sub) == 0 {
+		return true
+	}
+	if len(s) < len(sub) {
+		return false
+	}
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if strings.EqualFold(s[i:i+len(sub)], sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// sanitizeURLForLog returns a log-safe URL representation with credentials, query parameters, and fragments stripped.
+func sanitizeURLForLog(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "[invalid_url]"
+	}
+	safe := url.URL{
+		Scheme: strings.ToLower(u.Scheme),
+		Host:   u.Host,
+		Path:   u.Path,
+	}
+	return truncateUTF8(RedactAppKey(safe.String()), maxSanitizedURLLogBytes)
+}
+
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return s[:maxBytes] + "...(truncated)"
+}
+
+// redactingSlogHandler wraps any slog.Handler so app_key query values are redacted
+// even when callers inject custom slog handlers (e.g. in HTTP transport or tests).
+type redactingSlogHandler struct {
+	next slog.Handler
+}
+
+func newRedactingLogger(logger *slog.Logger) *slog.Logger {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	h := logger.Handler()
+	if _, ok := h.(*orderedTextHandler); ok {
+		return logger
+	}
+	if _, ok := h.(*redactingSlogHandler); ok {
+		return logger
+	}
+	return slog.New(&redactingSlogHandler{next: h})
+}
+
+func sanitizeSlogAttr(a slog.Attr) slog.Attr {
+	switch a.Value.Kind() {
+	case slog.KindString:
+		return slog.String(a.Key, RedactAppKey(a.Value.String()))
+	case slog.KindGroup:
+		group := a.Value.Group()
+		sanitized := make([]any, len(group))
+		for i, ga := range group {
+			sanitized[i] = sanitizeSlogAttr(ga)
+		}
+		return slog.Group(a.Key, sanitized...)
+	case slog.KindAny:
+		switch typed := a.Value.Any().(type) {
+		case error:
+			return slog.Any(a.Key, errors.New(RedactAppKey(typed.Error())))
+		case fmt.Stringer:
+			return slog.String(a.Key, RedactAppKey(typed.String()))
+		}
+	}
+	return a
+}
+
+func (h *redactingSlogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.next.Enabled(ctx, level)
+}
+
+func (h *redactingSlogHandler) Handle(ctx context.Context, r slog.Record) error {
+	clean := slog.NewRecord(r.Time, r.Level, RedactAppKey(r.Message), r.PC)
+	r.Attrs(func(a slog.Attr) bool {
+		clean.AddAttrs(sanitizeSlogAttr(a))
+		return true
+	})
+	return h.next.Handle(ctx, clean)
+}
+
+func (h *redactingSlogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	sanitized := make([]slog.Attr, len(attrs))
+	for i, a := range attrs {
+		sanitized[i] = sanitizeSlogAttr(a)
+	}
+	return &redactingSlogHandler{next: h.next.WithAttrs(sanitized)}
+}
+
+func (h *redactingSlogHandler) WithGroup(name string) slog.Handler {
+	return &redactingSlogHandler{next: h.next.WithGroup(name)}
+}
 
 // getLocalTimezone returns the local timezone location.
 // Priority:
@@ -110,7 +253,7 @@ func (h *orderedTextHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	// 4. Message
 	buf = append(buf, "msg="...)
-	buf = append(buf, r.Message...)
+	buf = append(buf, RedactAppKey(r.Message)...)
 	buf = append(buf, ' ')
 
 	// 5. Other attributes
@@ -158,7 +301,7 @@ func (h *orderedTextHandler) WithGroup(name string) slog.Handler {
 func appendValue(buf []byte, v slog.Value) []byte {
 	switch v.Kind() {
 	case slog.KindString:
-		buf = append(buf, v.String()...)
+		buf = append(buf, RedactAppKey(v.String())...)
 	case slog.KindInt64:
 		buf = appendInt(buf, v.Int64())
 	case slog.KindUint64:
@@ -198,9 +341,9 @@ func fmtAny(v any) string {
 		return "nil"
 	}
 	if err, ok := v.(error); ok {
-		return err.Error()
+		return RedactAppKey(err.Error())
 	}
-	return fmt.Sprintf("%+v", v)
+	return RedactAppKey(fmt.Sprintf("%+v", v))
 }
 
 // appendInt appends an int64 to the buffer.

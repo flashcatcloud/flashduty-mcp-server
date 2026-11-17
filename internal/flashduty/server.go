@@ -47,37 +47,45 @@ type FlashdutyConfig struct {
 
 	// Translator provides translated text for the server tooling
 	Translator translations.TranslationHelperFunc
+
+	// Logger is an optional structured logger (defaults to slog.Default() when nil)
+	Logger *slog.Logger
 }
 
 // serverInstructions is the default text returned to clients in the
 // initialize response; see cfg.Translator for how it can be overridden.
 const serverInstructions = "This server provides a curated, task-oriented toolset for Flashduty; it intentionally does not mirror the full Flashduty Open API. For operations not covered by these tools, use the Flashduty CLI (https://github.com/flashcatcloud/flashduty-cli), which covers the open API 1:1 — agents with shell access can drive it directly."
 
-func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
-	// When a client send an initialize request, update the user agent to include the client info.
-	beforeInit := func(ctx context.Context, _ any, message *mcp.InitializeRequest) {
-		_, clients, err := getClient(ctx, cfg, cfg.Version)
-		if err != nil {
-			// Cannot return error here, just log it.
-			// For HTTP server, the APP key is per-request, so it might not be available
-			// during the initial 'initialize' call if the server doesn't provide it.
-			// We can log a warning and proceed. The client will be created on-demand
-			// during actual tool calls.
-			slog.Warn("Could not get client during initialization, maybe APP key is not yet available", "error", err)
-			return
+func toolsetRequested(requested []string, targetToolset string) bool {
+	for _, item := range requested {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
 		}
-
-		userAgent := fmt.Sprintf(
-			"flashduty-mcp-server/%s (%s/%s)",
-			cfg.Version,
-			message.Params.ClientInfo.Name,
-			message.Params.ClientInfo.Version,
-		)
-		clients.New.UserAgent = userAgent
+		if trimmed == "all" {
+			return true
+		}
+		if targetToolset != "" && trimmed == targetToolset {
+			return true
+		}
 	}
+	return false
+}
 
-	if len(cfg.EnabledToolsets) == 0 {
-		cfg.EnabledToolsets = []string{"all"}
+func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
+	cleanedToolsets := make([]string, 0, len(cfg.EnabledToolsets))
+	for _, ts := range cfg.EnabledToolsets {
+		if trimmed := strings.TrimSpace(ts); trimmed != "" {
+			cleanedToolsets = append(cleanedToolsets, trimmed)
+		}
+	}
+	if len(cleanedToolsets) == 0 {
+		cleanedToolsets = []string{"all"}
+	}
+	cfg.EnabledToolsets = cleanedToolsets
+
+	if cfg.Translator == nil {
+		cfg.Translator = translations.NullTranslationHelper
 	}
 
 	toJSONString := func(v any) string {
@@ -97,43 +105,115 @@ func NewMCPServer(cfg FlashdutyConfig) (*server.MCPServer, error) {
 		return append(attrs, extraAttrs...)
 	}
 
+	hookLogger := func() *slog.Logger {
+		if cfg.Logger != nil {
+			return newRedactingLogger(cfg.Logger)
+		}
+		return newRedactingLogger(slog.Default())
+	}
+
 	hooks := &server.Hooks{
-		OnBeforeInitialize: []server.OnBeforeInitializeFunc{beforeInit},
 		OnBeforeAny: []server.BeforeAnyHookFunc{
 			func(ctx context.Context, _ any, _ mcp.MCPMethod, _ any) {
 				pkgerrors.ContextWithFlashdutyErrors(ctx)
 			},
 			func(ctx context.Context, id any, method mcp.MCPMethod, message any) {
-				attrs := buildLogAttrs(ctx, id, method, "params", mcplog.TruncateBodyDefault(toJSONString(message)))
-				slog.Info("mcp request", attrs...)
+				attrs := buildLogAttrs(ctx, id, method, "params", RedactAppKey(mcplog.TruncateBodyDefault(toJSONString(message))))
+				hookLogger().Info("mcp request", attrs...)
 			},
 		},
 		OnSuccess: []server.OnSuccessHookFunc{
 			func(ctx context.Context, id any, method mcp.MCPMethod, message any, result any) {
-				attrs := buildLogAttrs(ctx, id, method, "result", mcplog.TruncateBodyDefault(toJSONString(result)))
-				slog.Info("mcp response", attrs...)
+				attrs := buildLogAttrs(ctx, id, method, "result", RedactAppKey(mcplog.TruncateBodyDefault(toJSONString(result))))
+				hookLogger().Info("mcp response", attrs...)
 			},
 		},
 		OnError: []server.OnErrorHookFunc{
 			func(ctx context.Context, id any, method mcp.MCPMethod, message any, err error) {
-				attrs := buildLogAttrs(ctx, id, method, "error", err)
-				slog.Error("mcp error", attrs...)
+				errMsg := ""
+				if err != nil {
+					errMsg = RedactAppKey(err.Error())
+				}
+				attrs := buildLogAttrs(ctx, id, method, "error", errMsg)
+				hookLogger().Error("mcp error", attrs...)
 			},
 		},
 	}
-
-	flashdutyServer := server.NewMCPServer("flashduty-mcp-server", cfg.Version, server.WithHooks(hooks), server.WithInstructions(cfg.Translator("SERVER_INSTRUCTIONS", serverInstructions)))
 
 	getClientFn := func(ctx context.Context) (context.Context, *flashduty.Clients, error) {
 		return getClient(ctx, cfg, cfg.Version)
 	}
 
-	// Create default toolsets
+	// Create default toolsets and enable configured server-level toolsets
 	tsg := flashduty.DefaultToolsetGroup(getClientFn, cfg.ReadOnly, cfg.Translator)
 	err := tsg.EnableToolsets(cfg.EnabledToolsets)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enable toolsets: %w", err)
 	}
+
+	toolMeta := tsg.ToolMetadataMap()
+	serverEnabledToolsets := tsg.EnabledToolsetSet()
+
+	checkToolAccess := func(ctx context.Context, toolName string, annotations *mcp.ToolAnnotation) error {
+		reqCfg, hasReqCfg := ConfigFromContext(ctx)
+
+		meta, known := toolMeta[toolName]
+		isReadOnlyTool := false
+		if known {
+			isReadOnlyTool = meta.ReadOnly
+		} else if annotations != nil && annotations.ReadOnlyHint != nil {
+			isReadOnlyTool = *annotations.ReadOnlyHint
+		}
+
+		// Server-level ReadOnly can never be downgraded by per-request config.
+		effectiveReadOnly := cfg.ReadOnly || (hasReqCfg && reqCfg.ReadOnly)
+		if effectiveReadOnly && !isReadOnlyTool {
+			return fmt.Errorf("permission denied: tool %q is a write operation and disabled in read-only mode", toolName)
+		}
+
+		// Client toolsets can only intersect/subset server-enabled toolsets, never expand them.
+		if known {
+			if !serverEnabledToolsets[meta.Toolset] {
+				return fmt.Errorf("tool %q is disabled: toolset %q is not enabled on this server", toolName, meta.Toolset)
+			}
+			if hasReqCfg && len(reqCfg.EnabledToolsets) > 0 && !toolsetRequested(reqCfg.EnabledToolsets, meta.Toolset) {
+				return fmt.Errorf("tool %q is disabled: toolset %q is not enabled for this request", toolName, meta.Toolset)
+			}
+		} else if hasReqCfg && len(reqCfg.EnabledToolsets) > 0 && !toolsetRequested(reqCfg.EnabledToolsets, "") {
+			return fmt.Errorf("tool %q is disabled: not in enabled toolsets", toolName)
+		}
+
+		return nil
+	}
+
+	toolFilter := func(ctx context.Context, tools []mcp.Tool) []mcp.Tool {
+		filtered := make([]mcp.Tool, 0, len(tools))
+		for _, tool := range tools {
+			ann := tool.Annotations
+			if checkToolAccess(ctx, tool.Name, &ann) == nil {
+				filtered = append(filtered, tool)
+			}
+		}
+		return filtered
+	}
+
+	toolPolicyMiddleware := func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+		return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if err := checkToolAccess(ctx, request.Params.Name, nil); err != nil {
+				return nil, err
+			}
+			return next(ctx, request)
+		}
+	}
+
+	flashdutyServer := server.NewMCPServer(
+		"flashduty-mcp-server",
+		cfg.Version,
+		server.WithHooks(hooks),
+		server.WithInstructions(cfg.Translator("SERVER_INSTRUCTIONS", serverInstructions)),
+		server.WithToolFilter(toolFilter),
+		server.WithToolHandlerMiddleware(toolPolicyMiddleware),
+	)
 
 	// Register all mcp functionality with the server
 	tsg.RegisterAll(flashdutyServer)
@@ -147,7 +227,7 @@ func newStreamableHTTPServer(mcpServer *server.MCPServer, logger *slog.Logger, c
 		// mcp-go v0.55 renamed the transport logger option to
 		// WithStreamableHTTPLogger and switched it to *slog.Logger, so the
 		// former slogAdapter shim is no longer needed.
-		server.WithStreamableHTTPLogger(logger),
+		server.WithStreamableHTTPLogger(newRedactingLogger(logger)),
 		// Return 405 for GET requests — this server doesn't use server-initiated
 		// features (sampling, elicitation). Without this, the SDK's standalone SSE
 		// GET hangs indefinitely because mcp-go creates an orphan session and blocks.
@@ -275,6 +355,12 @@ type HTTPServerConfig struct {
 	// Flashduty API Base URL
 	BaseURL string
 
+	// EnabledToolsets restricts which toolsets the HTTP server exposes (defaults to all)
+	EnabledToolsets []string
+
+	// ReadOnly restricts the entire HTTP server to read-only operations
+	ReadOnly bool
+
 	// Port to listen on
 	Port string
 
@@ -292,43 +378,79 @@ const oauthTokenPrefix = "oauth:"
 // extractCredential extracts the bearer credential from the Authorization
 // header, falling back to the app_key query parameter.
 func extractCredential(r *http.Request) string {
-	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		tokenParts := strings.Split(authHeader, " ")
-		if len(tokenParts) == 2 && strings.ToLower(tokenParts[0]) == "bearer" {
-			return tokenParts[1]
+	if authHeader := strings.TrimSpace(r.Header.Get("Authorization")); authHeader != "" {
+		tokenParts := strings.SplitN(authHeader, " ", 2)
+		if len(tokenParts) == 2 && strings.EqualFold(tokenParts[0], "bearer") {
+			return strings.TrimSpace(tokenParts[1])
 		}
 	}
-	return r.URL.Query().Get("app_key")
+	return strings.TrimSpace(r.URL.Query().Get("app_key"))
 }
 
-// httpContextFunc extracts configuration from the HTTP request and injects it into the context.
-func httpContextFunc(ctx context.Context, r *http.Request, defaultBaseURL string) context.Context {
-	queryParams := r.URL.Query()
+func parseReadOnlyQueryParam(v string) bool {
+	trimmed := strings.TrimSpace(v)
+	return strings.EqualFold(trimmed, "true") || trimmed == "1"
+}
 
-	var enabledToolsets []string
-	if toolsets := queryParams.Get("toolsets"); toolsets != "" {
-		enabledToolsets = strings.Split(toolsets, ",")
+func parseQueryToolsets(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	parsed := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			parsed = append(parsed, trimmed)
+		}
+	}
+	if len(parsed) == 0 {
+		// Non-empty query parameter with no valid names (e.g. ",,,") must match nothing, not everything.
+		return []string{""}
+	}
+	return parsed
+}
+
+func buildHTTPRequestConfig(r *http.Request, defaultBaseURL string, serverReadOnly bool, logger *slog.Logger) FlashdutyConfig {
+	resolvedBaseURL := strings.TrimSpace(defaultBaseURL)
+	if resolvedBaseURL == "" {
+		resolvedBaseURL = defaultFlashdutyBaseURL
+	}
+
+	queryParams := r.URL.Query()
+	enabledToolsets := parseQueryToolsets(queryParams.Get("toolsets"))
+
+	// Server-level ReadOnly can never be downgraded by ?read_only=false.
+	readOnly := serverReadOnly || parseReadOnlyQueryParam(queryParams.Get("read_only"))
+
+	// Never honor client ?base_url= query overrides to prevent SSRF and credential exfiltration.
+	if rawBaseURL := strings.TrimSpace(queryParams.Get("base_url")); rawBaseURL != "" {
+		if logger != nil && !strings.EqualFold(strings.TrimRight(rawBaseURL, "/"), strings.TrimRight(resolvedBaseURL, "/")) {
+			newRedactingLogger(logger).Warn("ignoring client base_url query parameter in HTTP mode",
+				"requested_base_url", sanitizeURLForLog(rawBaseURL),
+			)
+		}
 	}
 
 	cfg := FlashdutyConfig{
-		BaseURL:         defaultBaseURL,
+		BaseURL:         resolvedBaseURL,
 		EnabledToolsets: enabledToolsets,
-		ReadOnly:        queryParams.Get("read_only") == "true",
+		ReadOnly:        readOnly,
+		Logger:          logger,
 	}
 
-	// An OAuth access token is only valid at the API of the authorization
-	// server that issued it, so it never follows a ?base_url= override.
 	credential := extractCredential(r)
 	if strings.HasPrefix(credential, oauthTokenPrefix) {
 		cfg.AccessToken = credential
 	} else {
 		cfg.APPKey = credential
-		if baseURL := queryParams.Get("base_url"); baseURL != "" {
-			cfg.BaseURL = baseURL
-		}
 	}
 
-	return ContextWithConfig(ctx, cfg)
+	return cfg
+}
+
+// httpContextFunc extracts configuration from the HTTP request and injects it into the context.
+func httpContextFunc(ctx context.Context, r *http.Request, defaultBaseURL string) context.Context {
+	return ContextWithConfig(ctx, buildHTTPRequestConfig(r, defaultBaseURL, false, slog.Default()))
 }
 
 // requestOrigin returns the scheme and host the client used to reach this
@@ -413,6 +535,56 @@ func newHTTPMux(mcpHandler http.Handler, baseURL string) *http.ServeMux {
 	return mux
 }
 
+func newHTTPHandler(cfg HTTPServerConfig, translator translations.TranslationHelperFunc, logger *slog.Logger) (*http.ServeMux, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if translator == nil {
+		translator = translations.NullTranslationHelper
+	}
+
+	defaultBaseURL := strings.TrimSpace(cfg.BaseURL)
+	if defaultBaseURL == "" {
+		defaultBaseURL = defaultFlashdutyBaseURL
+	}
+
+	enabledToolsets := cfg.EnabledToolsets
+	if len(enabledToolsets) == 0 {
+		enabledToolsets = []string{"all"}
+	}
+
+	mcpServer, err := NewMCPServer(FlashdutyConfig{
+		Version:         cfg.Version,
+		BaseURL:         defaultBaseURL,
+		EnabledToolsets: enabledToolsets,
+		ReadOnly:        cfg.ReadOnly,
+		Translator:      translator,
+		Logger:          logger,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MCP server: %w", err)
+	}
+
+	httpServer := newStreamableHTTPServer(mcpServer, logger, func(ctx context.Context, r *http.Request) context.Context {
+		// Extract W3C Trace Context from HTTP headers, or generate a new one
+		traceCtx, traceErr := trace.FromHTTPHeadersOrNew(r.Header)
+		if traceErr != nil {
+			newRedactingLogger(logger).Warn("Failed to generate trace context, continuing without trace", "error", traceErr)
+		} else {
+			ctx = trace.ContextWithTraceContext(ctx, traceCtx)
+		}
+
+		// Note: HTTP request logging is handled by MCP hooks (OnBeforeAny, OnSuccess, OnError)
+		// which provide more detailed information including method, params, and results.
+
+		reqCfg := buildHTTPRequestConfig(r, defaultBaseURL, cfg.ReadOnly, logger)
+		reqCfg.Version = cfg.Version
+		return ContextWithConfig(ctx, reqCfg)
+	})
+
+	return newHTTPMux(httpServer, defaultBaseURL), nil
+}
+
 func RunHTTPServer(cfg HTTPServerConfig) error {
 	// Set the global output format
 	flashduty.SetOutputFormat(flashduty.ParseOutputFormat(cfg.OutputFormat))
@@ -436,36 +608,14 @@ func RunHTTPServer(cfg HTTPServerConfig) error {
 	// Create translation helper
 	t, _ := translations.TranslationHelper()
 
-	// Create a single MCP server instance with a default/empty config.
-	// The actual config will be provided per-session via the context.
-	mcpServer, err := NewMCPServer(FlashdutyConfig{
-		Version:         cfg.Version,
-		Translator:      t,
-		EnabledToolsets: []string{"all"},
-	})
+	mux, err := newHTTPHandler(cfg, t, logger)
 	if err != nil {
-		return fmt.Errorf("failed to create MCP server: %w", err)
+		return err
 	}
-
-	httpServer := newStreamableHTTPServer(mcpServer, logger, func(ctx context.Context, r *http.Request) context.Context {
-		// Extract W3C Trace Context from HTTP headers, or generate a new one
-		traceCtx, err := trace.FromHTTPHeadersOrNew(r.Header)
-		if err != nil {
-			logger.Warn("Failed to generate trace context, continuing without trace", "error", err)
-			// Continue without trace context if generation fails
-		} else {
-			ctx = trace.ContextWithTraceContext(ctx, traceCtx)
-		}
-
-		// Note: HTTP request logging is handled by MCP hooks (OnBeforeAny, OnSuccess, OnError)
-		// which provide more detailed information including method, params, and results.
-
-		return httpContextFunc(ctx, r, cfg.BaseURL)
-	})
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newHTTPMux(httpServer, cfg.BaseURL),
+		Handler:           mux,
 		ReadHeaderTimeout: 30 * time.Second,
 		ReadTimeout:       0,                // No timeout for streaming
 		WriteTimeout:      0,                // No timeout for streaming
