@@ -18,7 +18,7 @@ import (
 
 // TestQueryIncidentsIDsBatched verifies incident_ids longer than the
 // /incident/list-by-ids cap are split into batches of 100 and merged back
-// newest first.
+// newest first, with repeated IDs returned once.
 func TestQueryIncidentsIDsBatched(t *testing.T) {
 	t.Parallel()
 
@@ -59,10 +59,11 @@ func TestQueryIncidentsIDsBatched(t *testing.T) {
 		return ctx, &Clients{New: client}, nil
 	}, translations.NullTranslationHelper)
 
-	ids := make([]string, 250)
+	ids := make([]string, 250, 251)
 	for i := range ids {
 		ids[i] = fmt.Sprintf("id%d", i+1)
 	}
+	ids = append(ids, "id1") // a repeated ID is returned once
 	result, err := handler(context.Background(), mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name:      "query_incidents",

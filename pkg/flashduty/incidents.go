@@ -24,8 +24,13 @@ const listByIDsBatch = 100
 
 // listIncidentsByIDs looks up any number of incident IDs in batches of
 // listByIDsBatch and returns them newest first, the order one call returns.
+// IDs are deduplicated first so a repeated ID is returned once, as in a
+// single call.
 func listIncidentsByIDs(ctx context.Context, client *flashduty.Client, ids []string) ([]flashduty.IncidentInfo, error) {
-	var items []flashduty.IncidentInfo
+	ids = slices.Clone(ids)
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	items := make([]flashduty.IncidentInfo, 0, len(ids))
 	for batch := range slices.Chunk(ids, listByIDsBatch) {
 		out, _, err := client.Incidents.ListByIDs(ctx, &flashduty.ListIncidentsByIDsRequest{IncidentIDs: batch})
 		if err != nil {
