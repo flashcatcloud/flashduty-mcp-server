@@ -1,9 +1,11 @@
 package flashduty
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,6 +18,29 @@ import (
 )
 
 const defaultQueryLimit = 20
+
+// listByIDsBatch is the per-call cap of /incident/list-by-ids.
+const listByIDsBatch = 100
+
+// listIncidentsByIDs looks up any number of incident IDs in batches of
+// listByIDsBatch and returns them newest first, the order one call returns.
+// IDs are deduplicated first so a repeated ID is returned once, as in a
+// single call.
+func listIncidentsByIDs(ctx context.Context, client *flashduty.Client, ids []string) ([]flashduty.IncidentInfo, error) {
+	ids = slices.Clone(ids)
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	items := make([]flashduty.IncidentInfo, 0, len(ids))
+	for batch := range slices.Chunk(ids, listByIDsBatch) {
+		out, _, err := client.Incidents.ListByIDs(ctx, &flashduty.ListIncidentsByIDsRequest{IncidentIDs: batch})
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, out.Items...)
+	}
+	slices.SortStableFunc(items, func(a, b flashduty.IncidentInfo) int { return cmp.Compare(b.StartTime, a.StartTime) })
+	return items, nil
+}
 
 const queryIncidentsDescription = `Query incidents by IDs, short ids (nums), time range, status, severity, channel, or free-text query. Returns the incident list with an alerts_total count per incident; for the actual alert objects of one or more incidents, call query_incident_alerts(incident_ids=...).`
 
@@ -94,17 +119,14 @@ func QueryIncidents(getClient GetFlashdutyClientFn, t translations.TranslationHe
 				if len(incidentIDs) == 0 {
 					return mcp.NewToolResultError("incident_ids must contain at least one valid ID when specified"), nil
 				}
-				out, _, err := client.New.Incidents.ListByIDs(ctx, &flashduty.ListIncidentsByIDsRequest{
-					IncidentIDs: incidentIDs,
-				})
+				items, err := listIncidentsByIDs(ctx, client.New, incidentIDs)
 				if err != nil {
 					return mcp.NewToolResultError(fmt.Sprintf("Unable to retrieve incidents: %v", err)), nil
 				}
-				total := int(out.Total)
-				return MarshalResult(addTruncationHint(map[string]any{
-					"incidents": out.Items,
-					"total":     total,
-				}, len(out.Items), total)), nil
+				return MarshalResult(map[string]any{
+					"incidents": items,
+					"total":     len(items),
+				}), nil
 			}
 
 			// IncludeAlerts is intentionally not exposed: per-incident alert
